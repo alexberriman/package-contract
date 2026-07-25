@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { comparePackages } from "./core/compare-packages.js";
@@ -58,6 +58,16 @@ async function packageInput(path: string): Promise<PackageInput> {
   throw new Error("package path must be a directory or tarball");
 }
 
+async function packageVersion(): Promise<string> {
+  const manifest = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version?: unknown };
+  if (typeof manifest.version !== "string") {
+    throw new Error("installed package metadata does not contain a version");
+  }
+  return manifest.version;
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
@@ -74,7 +84,7 @@ async function main(): Promise<void> {
   });
 
   if (values.version === true) {
-    process.stdout.write("0.0.0\n");
+    process.stdout.write(`${await packageVersion()}\n`);
     return;
   }
   if (values.help === true || positionals.length === 0) {
