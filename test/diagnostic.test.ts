@@ -148,6 +148,28 @@ describe("createDiagnostic", () => {
         }),
       ),
     ).toThrow(TypeError);
+    expect(() =>
+      createDiagnostic(
+        diagnostic({
+          profile: {
+            moduleSystem: "cjs",
+            runtime: "24.16.0",
+            typescriptResolution: "bundler",
+          },
+        }),
+      ),
+    ).toThrow("bundler resolution is not valid for CommonJS");
+    expect(() =>
+      createDiagnostic(
+        diagnostic({
+          sourceRange: {
+            end: { column: 1, line: 1 },
+            file: "package.json",
+            start: { column: 0, line: 1 },
+          },
+        }),
+      ),
+    ).toThrow("source positions must be positive integers");
   });
 
   it("orders diagnostics by stable identity fields", () => {

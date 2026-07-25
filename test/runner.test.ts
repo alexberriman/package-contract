@@ -11,6 +11,7 @@ import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
 import {
   comparePackages,
+  createDiagnostic,
   defineConsumer,
   materializeReproduction,
   testPackage,
@@ -736,6 +737,82 @@ describe("testPackage", () => {
     }
   });
 
+  it("materializes the CommonJS TypeScript probe form", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: typeFailureTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+            typescriptResolution: "node16",
+          },
+        ],
+      },
+    );
+    const original = report.diagnostics.find(({ code }) => code === "PC1002");
+    if (original === undefined) {
+      throw new Error("expected a TypeScript diagnostic");
+    }
+    const diagnostic = createDiagnostic({
+      ...original,
+      profile: {
+        ...original.profile,
+        moduleSystem: "cjs",
+      },
+    });
+    const cjsReport = {
+      ...report,
+      diagnostics: [diagnostic],
+    };
+    const root = await mkdtemp(join(tmpdir(), "package-contract-cjs-repro-test-"));
+    try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report: cjsReport,
+        tarballPath: typeFailureTarball,
+      });
+      expect(reproduction.files).toContain("probe.cts");
+      expect(await readFile(join(reproduction.path, "probe.cts"), "utf8")).toContain(
+        "import subject = require",
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects host-specific values from a generated reproduction", async () => {
+    const report = await testPackage({ kind: "tarball", path: badTarball });
+    const diagnostic = report.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a runtime diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-host-repro-test-"));
+    try {
+      await expect(
+        materializeReproduction({
+          diagnosticId: diagnostic.id,
+          outputRoot: root,
+          report: {
+            ...report,
+            actions: [
+              {
+                arguments: [],
+                exportName: process.cwd(),
+                kind: "export",
+                subpath: ".",
+              },
+            ],
+          },
+          tarballPath: badTarball,
+        }),
+      ).rejects.toThrow("contains a host-specific path");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("hides causally explained failures unless explicitly included", async () => {
     const profile = {
       moduleSystem: "esm" as const,
@@ -907,6 +984,22 @@ describe("testPackage", () => {
           cwd: reproduction.path,
         }),
       ).rejects.toMatchObject({ code: 1 });
+
+      const missingRoot = await mkdtemp(
+        join(tmpdir(), "package-contract-missing-bin-repro-test-"),
+      );
+      try {
+        await expect(
+          materializeReproduction({
+            diagnosticId: diagnostic.id,
+            outputRoot: missingRoot,
+            report: { ...failing, bins: [] },
+            tarballPath: binTarball,
+          }),
+        ).rejects.toThrow("executable action is missing");
+      } finally {
+        await rm(missingRoot, { force: true, recursive: true });
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -1102,6 +1195,24 @@ describe("testPackage", () => {
       }),
     ]);
     expect(JSON.stringify(report)).not.toContain(fixtureRoot);
+
+    const diagnostic = report.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected an installation diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-install-repro-test-"));
+    try {
+      await expect(
+        materializeReproduction({
+          diagnosticId: diagnostic.id,
+          outputRoot: root,
+          report,
+          tarballPath: installationFailureTarball,
+        }),
+      ).rejects.toThrow("does not support a standalone reproduction");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("expands safe wildcard exports and skips unclaimed types", async () => {

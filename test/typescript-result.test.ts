@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { InstalledConsumer } from "../src/core/consumer.js";
 import type { ProcessResult } from "../src/core/process.js";
-import { defineConsumer } from "../src/index.js";
+import { type ConsumerProfile, defineConsumer } from "../src/index.js";
 import {
   interpretTypeScriptWorkerResult,
   type PreparedTypeScriptProject,
+  runTypeScriptProbes,
 } from "../src/probes/typescript.js";
 import type { ResolvedTypeScriptCompiler } from "../src/probes/typescript-contract.js";
 
@@ -170,5 +172,46 @@ describe("interpretTypeScriptWorkerResult", () => {
       "completed",
       "unavailable",
     ]);
+  });
+});
+
+describe("runTypeScriptProbes input boundaries", () => {
+  const consumer = { path: "/unused" } as InstalledConsumer;
+
+  it("returns an immutable empty result without launching a worker", async () => {
+    const result = await runTypeScriptProbes(compiler, consumer, "example", []);
+
+    expect(result).toEqual([]);
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("rejects runtime-only and CommonJS Bundler profiles", async () => {
+    const runtimeOnly = defineConsumer({
+      moduleSystem: "esm",
+      runtime: { version: "24.16.0" },
+    });
+    const commonJsBundler = {
+      id: {
+        moduleSystem: "cjs",
+        runtime: "24.16.0",
+        typescriptResolution: "bundler",
+      },
+      runtime: {
+        executable: process.execPath,
+        version: "24.16.0",
+      },
+      subpaths: ["."],
+    } as ConsumerProfile;
+
+    await expect(
+      runTypeScriptProbes(compiler, consumer, "example", [
+        { profile: runtimeOnly, subpath: "." },
+      ]),
+    ).rejects.toThrow("requires a resolution mode");
+    await expect(
+      runTypeScriptProbes(compiler, consumer, "example", [
+        { profile: commonJsBundler, subpath: "." },
+      ]),
+    ).rejects.toThrow("not applicable to CommonJS");
   });
 });
