@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
-
+import { parsePackageManifest } from "./manifest.js";
 import { compareCodeUnits } from "./order.js";
 import type { PackArtifact, PackedFile } from "./pack.js";
 import { createTemporaryDirectory } from "./temporary.js";
@@ -144,13 +144,7 @@ export async function inspectTarball(sourcePath: string): Promise<PackArtifact> 
     } catch {
       throw new Error("packed package.json is not valid JSON");
     }
-    const candidate = manifest as { name?: unknown; version?: unknown };
-    if (typeof candidate.name !== "string" || candidate.name.length === 0) {
-      throw new Error("packed package name is missing or invalid");
-    }
-    if (typeof candidate.version !== "string" || candidate.version.length === 0) {
-      throw new Error("packed package version is missing or invalid");
-    }
+    const packageManifest = parsePackageManifest(manifest);
 
     return Object.freeze({
       cleanup: temporary.cleanup,
@@ -160,10 +154,11 @@ export async function inspectTarball(sourcePath: string): Promise<PackArtifact> 
         ),
       ),
       integrity: `sha512-${createHash("sha512").update(compressed).digest("base64")}`,
-      name: candidate.name,
+      manifest: packageManifest,
+      name: packageManifest.name,
       path: privatePath,
       sha256: createHash("sha256").update(compressed).digest("hex"),
-      version: candidate.version,
+      version: packageManifest.version,
     });
   } catch (error) {
     await temporary.cleanup();

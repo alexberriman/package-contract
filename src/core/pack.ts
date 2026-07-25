@@ -1,10 +1,10 @@
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import { createSafeEnvironment } from "./environment.js";
-import { hashFile } from "./hash.js";
-import { compareCodeUnits } from "./order.js";
+import type { PackageManifest } from "./manifest.js";
 import { runProcess } from "./process.js";
+import { inspectTarball } from "./tarball.js";
 import { createTemporaryDirectory } from "./temporary.js";
 
 export interface PackedFile {
@@ -17,6 +17,7 @@ export interface PackArtifact {
   readonly cleanup: () => Promise<void>;
   readonly files: readonly PackedFile[];
   readonly integrity: string;
+  readonly manifest: PackageManifest;
   readonly name: string;
   readonly path: string;
   readonly sha256: string;
@@ -94,26 +95,17 @@ export async function packDirectory(directory: string): Promise<PackArtifact> {
       throw new Error("npm pack returned an unsafe filename");
     }
     const path = await realpath(join(temporary.path, packed.filename));
-    const packageJson = JSON.parse(
-      await readFile(join(directory, "package.json"), "utf8"),
-    ) as { name?: unknown };
-    if (packageJson.name !== packed.name) {
+    const inspected = await inspectTarball(path);
+    if (
+      inspected.name !== packed.name ||
+      inspected.version !== packed.version ||
+      inspected.integrity !== packed.integrity
+    ) {
+      await inspected.cleanup();
       throw new Error("packed package name does not match the source manifest");
     }
-
-    return Object.freeze({
-      cleanup: temporary.cleanup,
-      files: Object.freeze(
-        packed.files
-          .map((file) => Object.freeze({ ...file }))
-          .sort((left, right) => compareCodeUnits(left.path, right.path)),
-      ),
-      integrity: packed.integrity,
-      name: packed.name,
-      path,
-      sha256: await hashFile(path),
-      version: packed.version,
-    });
+    await temporary.cleanup();
+    return inspected;
   } catch (error) {
     await temporary.cleanup();
     throw error;

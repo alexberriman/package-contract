@@ -3,7 +3,13 @@ import { defineConfig } from "vitest/config";
 const config: ReturnType<typeof defineConfig> = defineConfig({
   test: {
     coverage: {
-      exclude: ["dist/**", "research/**", "src/cli.ts", "test/**"],
+      exclude: [
+        "dist/**",
+        "research/**",
+        "src/cli.ts",
+        "src/probes/typescript-worker.ts",
+        "test/**",
+      ],
       include: ["src/**/*.ts"],
       provider: "v8",
       reporter: ["text", "json-summary", "html"],

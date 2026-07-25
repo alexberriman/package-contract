@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-
+import type { ConsumerProfile } from "../profiles/consumer.js";
 import { createSafeEnvironment } from "./environment.js";
 import type { PackArtifact } from "./pack.js";
 import { type ProcessResult, runProcess } from "./process.js";
@@ -14,6 +15,13 @@ export interface ConsumerRun {
   readonly probe: ProcessResult | null;
 }
 
+export interface InstalledConsumer {
+  readonly cleanup: () => Promise<void>;
+  readonly install: ProcessResult;
+  readonly lockfile: string | null;
+  readonly path: string;
+}
+
 export interface RunConsumerOptions {
   readonly cachePath?: string;
   readonly lockfile?: string;
@@ -21,10 +29,24 @@ export interface RunConsumerOptions {
   readonly runtimeExecutable?: string;
 }
 
-export async function runRootEsmConsumer(
+function packageSpecifier(packageName: string, subpath: string): string {
+  return subpath === "." ? packageName : `${packageName}${subpath.slice(1)}`;
+}
+
+export function runtimeProbeFilename(
+  packageName: string,
+  moduleSystem: "cjs" | "esm",
+  subpath: string,
+): string {
+  const specifier = packageSpecifier(packageName, subpath);
+  const token = createHash("sha256").update(specifier).digest("hex").slice(0, 12);
+  return `probe-${token}.${moduleSystem === "esm" ? "mjs" : "cjs"}`;
+}
+
+export async function installConsumer(
   artifact: PackArtifact,
   options: RunConsumerOptions = {},
-): Promise<ConsumerRun> {
+): Promise<InstalledConsumer> {
   const temporary = await createTemporaryDirectory("package-contract-consumer-");
   const npmConfig = join(temporary.path, "npmrc");
   const globalNpmConfig = join(temporary.path, "global-npmrc");
@@ -56,12 +78,6 @@ export async function runRootEsmConsumer(
     { mode: 0o600 },
   );
   await writeFile(globalNpmConfig, "", { mode: 0o600 });
-  await writeFile(
-    join(temporary.path, "probe.mjs"),
-    `await import(${JSON.stringify(artifact.name)});\n`,
-    { mode: 0o600 },
-  );
-
   try {
     const install = await runProcess({
       args: [
@@ -84,26 +100,60 @@ export async function runRootEsmConsumer(
       install.exitCode === 0
         ? await readFile(join(temporary.path, "package-lock.json"), "utf8")
         : null;
-    const probe =
-      install.exitCode === 0
-        ? await runProcess({
-            args: ["probe.mjs"],
-            cwd: temporary.path,
-            env: createSafeEnvironment(),
-            executable: options.runtimeExecutable ?? process.execPath,
-            timeoutMs: 30_000,
-          })
-        : null;
-
     return Object.freeze({
       cleanup: temporary.cleanup,
       install,
       lockfile,
       path: temporary.path,
-      probe,
     });
   } catch (error) {
     await temporary.cleanup();
     throw error;
   }
+}
+
+export async function runRuntimeProbe(
+  consumer: InstalledConsumer,
+  packageName: string,
+  profile: ConsumerProfile,
+  subpath: string,
+): Promise<ProcessResult> {
+  const esm = profile.id.moduleSystem === "esm";
+  const specifier = packageSpecifier(packageName, subpath);
+  const filename = runtimeProbeFilename(packageName, profile.id.moduleSystem, subpath);
+  const source = esm
+    ? `await import(${JSON.stringify(specifier)});\n`
+    : `require(${JSON.stringify(specifier)});\n`;
+  await writeFile(join(consumer.path, filename), source, { mode: 0o600 });
+  return runProcess({
+    args: [filename],
+    cwd: consumer.path,
+    env: createSafeEnvironment(),
+    executable: profile.runtime.executable,
+    timeoutMs: 30_000,
+  });
+}
+
+export async function runRootEsmConsumer(
+  artifact: PackArtifact,
+  options: RunConsumerOptions = {},
+): Promise<ConsumerRun> {
+  const consumer = await installConsumer(artifact, options);
+  const profile: ConsumerProfile = Object.freeze({
+    id: Object.freeze({
+      moduleSystem: "esm",
+      runtime: process.version.slice(1),
+      typescriptResolution: null,
+    }),
+    runtime: Object.freeze({
+      executable: options.runtimeExecutable ?? process.execPath,
+      version: process.version.slice(1),
+    }),
+    subpaths: Object.freeze(["."]),
+  });
+  const probe =
+    consumer.install.exitCode === 0
+      ? await runRuntimeProbe(consumer, artifact.name, profile, ".")
+      : null;
+  return Object.freeze({ ...consumer, probe });
 }

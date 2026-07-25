@@ -14,6 +14,7 @@ export type { PackedFile } from "./core/pack.js";
 export type {
   PackageReport,
   ReportEnvironment,
+  RuntimePlatform,
 } from "./core/report.js";
 export type {
   EvaluationState,
