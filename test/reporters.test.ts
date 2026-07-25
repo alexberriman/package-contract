@@ -80,6 +80,51 @@ describe("reporters", () => {
     );
   });
 
+  it("renders fixes and remains quiet for a conclusive unchanged comparison", () => {
+    const base = report();
+    const diagnostic = base.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a diagnostic");
+    }
+    expect(
+      renderHumanComparison({
+        after: base.package,
+        before: base.package,
+        conclusive: true,
+        fixes: [diagnostic],
+        inconclusiveReason: null,
+        regressions: [],
+        unchanged: [],
+      }),
+    ).toContain("FIX PC1001 Package evaluation failed");
+    expect(
+      renderHumanComparison({
+        after: base.package,
+        before: base.package,
+        conclusive: true,
+        fixes: [],
+        inconclusiveReason: null,
+        regressions: [],
+        unchanged: [],
+      }),
+    ).toBe("");
+  });
+
+  it("uses a stable fallback for an unexplained inconclusive comparison", () => {
+    const base = report(false);
+    expect(
+      renderHumanComparison({
+        after: base.package,
+        before: base.package,
+        conclusive: false,
+        fixes: [],
+        inconclusiveReason: null,
+        regressions: [],
+        unchanged: [],
+      }),
+    ).toBe("Comparison inconclusive: unknown reason.\n");
+  });
+
   it("is quiet for healthy human and GitHub reports", () => {
     expect(renderHumanReport(report(false))).toBe("");
     expect(renderGitHubReport(report(false))).toBe("");
@@ -98,9 +143,53 @@ describe("reporters", () => {
     );
   });
 
+  it("includes the TypeScript resolution in human profile labels", () => {
+    const base = report();
+    const diagnostic = base.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a diagnostic");
+    }
+    expect(
+      renderHumanReport({
+        ...base,
+        diagnostics: [
+          {
+            ...diagnostic,
+            profile: {
+              ...diagnostic.profile,
+              typescriptResolution: "bundler",
+            },
+          },
+        ],
+      }),
+    ).toContain("(ESM, Node 24.16.0, TypeScript bundler)");
+  });
+
   it("escapes GitHub workflow commands and includes source positions", () => {
     expect(renderGitHubReport(report())).toBe(
       "::error title=PC1001 Package evaluation failed,file=package.json,line=2,col=3,endLine=2,endColumn=8::.: first line%0A100%25: second,line\n",
+    );
+  });
+
+  it("renders annotations without optional source positions", () => {
+    const base = report();
+    const diagnostic = base.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a diagnostic");
+    }
+    const { sourceRange: _sourceRange, ...withoutSourceRange } = diagnostic;
+    expect(
+      renderGitHubReport({
+        ...base,
+        diagnostics: [
+          {
+            ...withoutSourceRange,
+            severity: "warning",
+          },
+        ],
+      }),
+    ).toBe(
+      "::warning title=PC1001 Package evaluation failed::.: first line%0A100%25: second,line\n",
     );
   });
 
