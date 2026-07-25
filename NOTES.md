@@ -23,3 +23,6 @@
 - The required incumbent integrations make literal zero production dependencies
   impossible. The acceptable target is no convenience dependencies and a small,
   justified runtime graph.
+- M1 begins with global coverage gates of 85% statements and lines, 80%
+  branches, and 95% functions while subprocess error paths are still being
+  built. The v1 release gate remains 95% for every metric.

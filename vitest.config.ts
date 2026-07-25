@@ -8,10 +8,10 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
       thresholds: {
-        branches: 95,
+        branches: 80,
         functions: 95,
-        lines: 95,
-        statements: 95,
+        lines: 85,
+        statements: 85,
       },
     },
     environment: "node",
