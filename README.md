@@ -121,7 +121,7 @@ package-contract check . --include-explained
 # Prove installation can replay without network access
 package-contract check . --offline
 
-# Compare two artifacts under the same profiles and npm cache
+# Compare two artifacts under the same profiles and captured npm cache
 package-contract compare ./before.tgz ./after.tgz
 
 # Materialize a minimal consumer for one diagnostic
@@ -260,6 +260,9 @@ the normalized lockfile digest.
 
 Normal mode may use the npm registry to install package dependencies. Strict
 offline mode passes `--offline`; a cache miss becomes `not-evaluated`.
+Comparisons populate a private cache with the before artifact, then install the
+after artifact offline from that captured state. Missing or different
+dependency graph digests make the comparison inconclusive.
 
 ## Security boundary
 

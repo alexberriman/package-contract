@@ -42,6 +42,7 @@ export async function comparePackages(
     const afterReport = await testPackage(afterInput, {
       ...options,
       npmCachePath: cache.path,
+      offline: true,
     });
     const before = byId(beforeReport.diagnostics);
     const after = byId(afterReport.diagnostics);

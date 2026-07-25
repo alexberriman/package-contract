@@ -35,6 +35,7 @@ let installationFailureTarball = "";
 let explainedTarball = "";
 let comparisonBeforeTarball = "";
 let comparisonAfterTarball = "";
+let comparisonDriftBeforeTarball = "";
 let comparisonDriftTarball = "";
 let actionTarball = "";
 let binTarball = "";
@@ -260,6 +261,16 @@ beforeAll(async () => {
     "import { readFileSync } from 'node:fs';\nreadFileSync(new URL('./missing.txt', import.meta.url));\nexport const value = 42;\n",
     {},
     {},
+    { name: "package-contract-compare-fixture" },
+  );
+  comparisonDriftBeforeTarball = await makeFixture(
+    "package-contract-compare-drift-before",
+    "export const value = 42;\n",
+    {},
+    {
+      "is-number": "7.0.0",
+      picocolors: "1.1.1",
+    },
     { name: "package-contract-compare-fixture" },
   );
   comparisonDriftTarball = await makeFixture(
@@ -1259,7 +1270,7 @@ describe("comparePackages", () => {
 
   it("marks changed transitive installation state as inconclusive", async () => {
     const comparison = await comparePackages(
-      { kind: "tarball", path: comparisonBeforeTarball },
+      { kind: "tarball", path: comparisonDriftBeforeTarball },
       { kind: "tarball", path: comparisonDriftTarball },
       {
         profiles: [
@@ -1274,6 +1285,27 @@ describe("comparePackages", () => {
     expect(comparison).toMatchObject({
       conclusive: false,
       inconclusiveReason: "dependency-graph-drift",
+      regressions: [],
+    });
+  });
+
+  it("does not consult the registry for a new after dependency", async () => {
+    const comparison = await comparePackages(
+      { kind: "tarball", path: comparisonBeforeTarball },
+      { kind: "tarball", path: comparisonDriftTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(comparison).toMatchObject({
+      conclusive: false,
+      inconclusiveReason: "dependency-graph-unavailable",
       regressions: [],
     });
   });

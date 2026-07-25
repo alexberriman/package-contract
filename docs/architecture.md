@@ -56,3 +56,6 @@ normalized. Reports contain no timestamps.
 The normalized lockfile digest replaces the package tarball's local path,
 integrity, and own version while preserving the installed dependency graph.
 Comparisons with missing or different graph digests are inconclusive.
+The before artifact populates a private npm cache. The after artifact installs
+offline from that captured state so registry changes cannot affect only one
+side of the comparison.
