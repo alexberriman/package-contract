@@ -82,6 +82,26 @@ for (const file of unpacked.files) {
   if (secretPatterns.some((pattern) => pattern.test(text))) {
     throw new Error(`release tarball contains a credential pattern in ${file.name}`);
   }
+  if (file.name.endsWith(".map")) {
+    const sourceMap = JSON.parse(text);
+    if (
+      !Array.isArray(sourceMap.sources) ||
+      !Array.isArray(sourceMap.sourcesContent) ||
+      sourceMap.sources.length !== sourceMap.sourcesContent.length ||
+      sourceMap.sources.some(
+        (source) =>
+          typeof source !== "string" ||
+          source.startsWith("/") ||
+          source.includes("\\") ||
+          /^[a-z]:/i.test(source),
+      ) ||
+      sourceMap.sourcesContent.some((source) => typeof source !== "string")
+    ) {
+      throw new Error(
+        `release tarball contains an incomplete source map in ${file.name}`,
+      );
+    }
+  }
 }
 
 run("npx", ["--no-install", "publint", tarball]);
