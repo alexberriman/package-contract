@@ -58,6 +58,24 @@ describe("incumbent suppression", () => {
     });
   });
 
+  it("accepts only known Publint declaration explanations", () => {
+    const explained = applyIncumbentExplanations(failedResult(), [
+      finding({
+        code: "EXPORTS_TYPES_SHOULD_BE_FIRST",
+        details: { path: ["exports", "./feature", "types"] },
+        tool: "publint",
+      }),
+    ]);
+
+    expect(explained.state).toBe("fail");
+    if (explained.state !== "fail") {
+      throw new Error("expected a failed result");
+    }
+    expect(explained.diagnostics[0]?.explainedBy).toEqual([
+      "publint:EXPORTS_TYPES_SHOULD_BE_FIRST",
+    ]);
+  });
+
   it.each([
     ["unknown code", finding({ code: "FutureProblem" })],
     ["other subpath", finding({ subpath: "./other" })],

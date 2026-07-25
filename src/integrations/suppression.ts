@@ -10,6 +10,13 @@ const PUBLINT_RUNTIME_CODES = new Set([
   "FILE_INVALID_FORMAT",
   "FILE_NOT_PUBLISHED",
 ]);
+const PUBLINT_TYPESCRIPT_CODES = new Set([
+  "EXPORTS_TYPES_INVALID_FORMAT",
+  "EXPORTS_TYPES_SHOULD_BE_FIRST",
+  "FILE_DOES_NOT_EXIST",
+  "FILE_NOT_PUBLISHED",
+  "TYPES_NOT_EXPORTED",
+]);
 const ATTW_RUNTIME_CODES = new Set(["CJSResolvesToESM", "NoResolution"]);
 const ATTW_TYPESCRIPT_CODES = new Set([
   "CJSResolvesToESM",
@@ -46,6 +53,9 @@ function explains(diagnostic: Diagnostic, finding: IncumbentFinding): boolean {
       ATTW_RUNTIME_CODES.has(finding.code) &&
       detailString(finding.details, "resolutionKind") === expectedResolution(diagnostic)
     );
+  }
+  if (diagnostic.code === "PC1002" && finding.tool === "publint") {
+    return PUBLINT_TYPESCRIPT_CODES.has(finding.code);
   }
   if (diagnostic.code === "PC1002" && finding.tool === "attw") {
     return (
