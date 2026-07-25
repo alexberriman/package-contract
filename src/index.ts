@@ -35,3 +35,6 @@ export {
   defineConsumer,
   type RuntimeInput,
 } from "./profiles/consumer.js";
+export { renderGitHubReport } from "./reporters/github.js";
+export { renderHumanReport } from "./reporters/human.js";
+export { serializeJsonReport } from "./reporters/json.js";
