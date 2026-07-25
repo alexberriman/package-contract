@@ -416,19 +416,23 @@ export async function testPackage(
         );
         for (const pattern of expansion.unresolved) {
           results.push(
-            notEvaluated(
-              profiles[0] as ConsumerProfile,
-              pattern,
-              "unsupported-export-pattern",
-              "The export pattern could not be enumerated safely.",
+            ...profiles.map((profile) =>
+              notEvaluated(
+                profile,
+                pattern,
+                "unsupported-export-pattern",
+                "The export pattern could not be enumerated safely.",
+              ),
             ),
           );
         }
         const explicit = [
           ...new Set([...exports.explicit, ...expansion.expanded]),
         ].sort(compareCodeUnits);
-        const tasks = explicit.flatMap((subpath) =>
-          profiles.map((profile) => ({ profile, subpath })),
+        const tasks = profiles.flatMap((profile) =>
+          (options.profiles === undefined ? explicit : profile.subpaths).map(
+            (subpath) => ({ profile, subpath }),
+          ),
         );
         results.push(
           ...(await mapConcurrent(tasks, concurrency, async ({ profile, subpath }) => {

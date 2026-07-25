@@ -440,6 +440,28 @@ describe("testPackage", () => {
     ).toBe(true);
   });
 
+  it("limits explicit profiles to their requested subpaths", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: patternTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+            subpaths: ["./features/a"],
+          },
+        ],
+      },
+    );
+
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        state: "pass",
+        subpath: "./features/a",
+      }),
+    ]);
+  });
+
   it("replays an installed dependency graph from its lockfile and warm cache", async () => {
     const artifact = await inspectTarball(dependencyTarball);
     const cache = await createTemporaryDirectory("package-contract-cache-test-");

@@ -139,21 +139,26 @@ export async function runRootEsmConsumer(
   options: RunConsumerOptions = {},
 ): Promise<ConsumerRun> {
   const consumer = await installConsumer(artifact, options);
-  const profile: ConsumerProfile = Object.freeze({
-    id: Object.freeze({
-      moduleSystem: "esm",
-      runtime: process.version.slice(1),
-      typescriptResolution: null,
-    }),
-    runtime: Object.freeze({
-      executable: options.runtimeExecutable ?? process.execPath,
-      version: process.version.slice(1),
-    }),
-    subpaths: Object.freeze(["."]),
-  });
-  const probe =
-    consumer.install.exitCode === 0
-      ? await runRuntimeProbe(consumer, artifact.name, profile, ".")
-      : null;
-  return Object.freeze({ ...consumer, probe });
+  try {
+    const profile: ConsumerProfile = Object.freeze({
+      id: Object.freeze({
+        moduleSystem: "esm",
+        runtime: process.version.slice(1),
+        typescriptResolution: null,
+      }),
+      runtime: Object.freeze({
+        executable: options.runtimeExecutable ?? process.execPath,
+        version: process.version.slice(1),
+      }),
+      subpaths: Object.freeze(["."]),
+    });
+    const probe =
+      consumer.install.exitCode === 0
+        ? await runRuntimeProbe(consumer, artifact.name, profile, ".")
+        : null;
+    return Object.freeze({ ...consumer, probe });
+  } catch (error) {
+    await consumer.cleanup();
+    throw error;
+  }
 }
