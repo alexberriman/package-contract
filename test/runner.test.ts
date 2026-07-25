@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runRootEsmConsumer } from "../src/core/consumer.js";
+import { installConsumer, runRootEsmConsumer } from "../src/core/consumer.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
 import {
@@ -902,6 +902,33 @@ describe("testPackage", () => {
       }
     } finally {
       await Promise.all([artifact.cleanup(), cache.cleanup()]);
+    }
+  });
+
+  it("isolates concurrent installs while safely sharing one npm cache", async () => {
+    const artifact = await inspectTarball(dependencyTarball);
+    const cache = await createTemporaryDirectory(
+      "package-contract-cache-contention-test-",
+    );
+    const installs = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        installConsumer(artifact, { cachePath: cache.path }),
+      ),
+    );
+    const consumers = installs.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    try {
+      expect(installs.every(({ status }) => status === "fulfilled")).toBe(true);
+      expect(consumers.map(({ install }) => install.exitCode)).toEqual([0, 0, 0, 0]);
+      expect(new Set(consumers.map(({ path }) => path)).size).toBe(4);
+    } finally {
+      const paths = consumers.map(({ path }) => path);
+      await Promise.all(consumers.map(({ cleanup }) => cleanup()));
+      await Promise.all([artifact.cleanup(), cache.cleanup()]);
+      for (const path of paths) {
+        await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+      }
     }
   });
 });
