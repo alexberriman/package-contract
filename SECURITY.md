@@ -3,7 +3,8 @@
 ## Supported versions
 
 Security fixes are provided for the latest published major version.
-Pre-release and development snapshots are not supported.
+Before v1, fixes are provided for the latest published prerelease.
+Unpublished development snapshots are not supported.
 
 ## Reporting a vulnerability
 

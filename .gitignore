@@ -24,4 +24,5 @@ Thumbs.db
 # Test artifacts
 .package-contract/
 repros/
+release/
 research/m0/raw-results.json

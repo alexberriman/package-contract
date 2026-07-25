@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+        node:
+          - 24
+          - 26
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@12.0.1
+      - name: Install dependencies
+        run: npm ci
+      - name: Check formatting, types, and tests
+        run: npm run check
+      - name: Build package
+        run: npm run build
+      - name: Pack package
+        run: npm pack --json
+
+  release-artifact:
+    name: Exact release artifact
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@12.0.1
+      - name: Install dependencies
+        run: npm ci
+      - name: Enforce coverage
+        run: npm run test:coverage
+      - name: Build and capture the exact tarball
+        id: pack
+        shell: bash
+        run: |
+          npm pack --json > pack-result.json
+          tarball="$(node -e "const fs=require('node:fs'); const [result]=JSON.parse(fs.readFileSync('pack-result.json','utf8')); process.stdout.write(result.filename)")"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+      - name: Run Publint
+        run: npx --no-install publint "${{ steps.pack.outputs.tarball }}"
+      - name: Run Are the Types Wrong
+        run: npx --no-install attw --pack "${{ steps.pack.outputs.tarball }}" --profile esm-only
+      - name: Run package-contract against itself
+        run: node dist/cli.js check "${{ steps.pack.outputs.tarball }}"
+      - name: Prove a clean consumer install
+        shell: bash
+        run: |
+          consumer="$(mktemp -d)"
+          npm install "$PWD/${{ steps.pack.outputs.tarball }}" --prefix "$consumer" --ignore-scripts --no-audit --no-fund
+          cd "$consumer"
+          node --input-type=module -e "await import('package-contract')"
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+      - name: Audit production licenses
+        run: npm run audit:licenses
