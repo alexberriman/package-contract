@@ -9,7 +9,8 @@ export interface NotEvaluatedReason {
     | "offline-cache-miss"
     | "resource-limit"
     | "runtime-unavailable"
-    | "unsupported-export-pattern";
+    | "unsupported-export-pattern"
+    | "unexpected-probe-failure";
   readonly message: string;
 }
 

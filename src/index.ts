@@ -41,6 +41,15 @@ export type {
   IncumbentTool,
 } from "./integrations/types.js";
 export {
+  type ActionValue,
+  type BinAction,
+  type BinActionInput,
+  defineBinActions,
+  defineRuntimeActions,
+  type RuntimeAction,
+  type RuntimeActionInput,
+} from "./profiles/action.js";
+export {
   type ConsumerProfile,
   type ConsumerProfileInput,
   defineConsumer,

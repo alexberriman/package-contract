@@ -259,3 +259,23 @@ export function expandExportPatterns(
     unresolved: Object.freeze(unresolved.sort(compareCodeUnits)),
   });
 }
+
+export function selectBlockedDeepImport(
+  manifest: PackageManifest,
+  packedFiles: readonly string[],
+): string | null {
+  if (manifest.exports === undefined) {
+    return null;
+  }
+  const candidates = packedFiles
+    .filter(
+      (file) =>
+        (file.endsWith(".js") || file.endsWith(".mjs") || file.endsWith(".cjs")) &&
+        !file.includes("\\") &&
+        !file.split("/").includes(".."),
+    )
+    .map((file) => `./${file}`)
+    .filter((subpath) => declaredModuleSystems(manifest, subpath).size === 0)
+    .sort(compareCodeUnits);
+  return candidates[0] ?? null;
+}

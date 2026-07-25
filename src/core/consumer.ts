@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
+import type { RuntimeAction } from "../profiles/action.js";
 import type { ConsumerProfile } from "../profiles/consumer.js";
 import { createSafeEnvironment } from "./environment.js";
 import type { PackArtifact } from "./pack.js";
@@ -41,6 +42,33 @@ export function runtimeProbeFilename(
   const specifier = packageSpecifier(packageName, subpath);
   const token = createHash("sha256").update(specifier).digest("hex").slice(0, 12);
   return `probe-${token}.${moduleSystem === "esm" ? "mjs" : "cjs"}`;
+}
+
+export function runtimeProbeSource(
+  packageName: string,
+  moduleSystem: "cjs" | "esm",
+  subpath: string,
+  actions: readonly RuntimeAction[] = [],
+): string {
+  const esm = moduleSystem === "esm";
+  const specifier = packageSpecifier(packageName, subpath);
+  const statements = actions.map((action) => {
+    const name = JSON.stringify(action.exportName);
+    if (action.kind === "export") {
+      return `if (!Object.hasOwn(subject, ${name})) throw new Error(${JSON.stringify(`Expected export ${action.exportName} was not found.`)});`;
+    }
+    if (action.kind === "call") {
+      return `if (typeof subject[${name}] !== "function") throw new Error(${JSON.stringify(`Expected export ${action.exportName} to be a function.`)});\nawait subject[${name}](...${JSON.stringify(action.arguments)});`;
+    }
+    return `if (!(typeof subject[${name}] === "string" || subject[${name}] instanceof URL)) throw new Error(${JSON.stringify(`Expected export ${action.exportName} to be a file path or URL.`)});\nawait (await import("node:fs/promises")).readFile(subject[${name}]);`;
+  });
+  const load = esm
+    ? `const subject = await import(${JSON.stringify(specifier)});`
+    : `const subject = require(${JSON.stringify(specifier)});`;
+  const body = [load, ...statements].join("\n");
+  return esm
+    ? `${body}\n`
+    : `void (async () => {\n${body}\n})().catch((error) => {\n  process.stderr.write(\`\${error instanceof Error ? (error.stack ?? error.message) : String(error)}\\n\`);\n  process.exitCode = 1;\n});\n`;
 }
 
 export async function installConsumer(
@@ -117,19 +145,35 @@ export async function runRuntimeProbe(
   packageName: string,
   profile: ConsumerProfile,
   subpath: string,
+  actions: readonly RuntimeAction[] = [],
 ): Promise<ProcessResult> {
-  const esm = profile.id.moduleSystem === "esm";
-  const specifier = packageSpecifier(packageName, subpath);
   const filename = runtimeProbeFilename(packageName, profile.id.moduleSystem, subpath);
-  const source = esm
-    ? `await import(${JSON.stringify(specifier)});\n`
-    : `require(${JSON.stringify(specifier)});\n`;
+  const source = runtimeProbeSource(
+    packageName,
+    profile.id.moduleSystem,
+    subpath,
+    actions,
+  );
   await writeFile(join(consumer.path, filename), source, { mode: 0o600 });
   return runProcess({
     args: [filename],
     cwd: consumer.path,
     env: createSafeEnvironment(),
     executable: profile.runtime.executable,
+    timeoutMs: 30_000,
+  });
+}
+
+export async function runBinProbe(
+  consumer: InstalledConsumer,
+  name: string,
+  arguments_: readonly string[],
+): Promise<ProcessResult> {
+  return runProcess({
+    args: [...arguments_],
+    cwd: consumer.path,
+    env: createSafeEnvironment(),
+    executable: join(consumer.path, "node_modules", ".bin", name),
     timeoutMs: 30_000,
   });
 }

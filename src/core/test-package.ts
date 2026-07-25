@@ -5,6 +5,14 @@ import { formatTypeScriptEvidence, runTypeScriptProbe } from "../probes/typescri
 import type { ResolvedTypeScriptCompiler } from "../probes/typescript-contract.js";
 import { resolveTypeScriptCompiler } from "../probes/typescript-resolver.js";
 import {
+  type BinAction,
+  type BinActionInput,
+  defineBinActions,
+  defineRuntimeActions,
+  type RuntimeAction,
+  type RuntimeActionInput,
+} from "../profiles/action.js";
+import {
   type ConsumerProfile,
   type ConsumerProfileInput,
   defineConsumer,
@@ -14,11 +22,13 @@ import {
   declaresTypes,
   enumerateExportSubpaths,
   expandExportPatterns,
+  selectBlockedDeepImport,
 } from "../profiles/exports.js";
 import { mapConcurrent } from "./concurrency.js";
 import {
   type InstalledConsumer,
   installConsumer,
+  runBinProbe,
   runRuntimeProbe,
   runtimeProbeFilename,
 } from "./consumer.js";
@@ -30,6 +40,7 @@ import {
 } from "./diagnostic.js";
 import { hashFile } from "./hash.js";
 import type { PackageInput } from "./input.js";
+import { declaredBinNames } from "./manifest.js";
 import { compareCodeUnits } from "./order.js";
 import { type PackArtifact, packDirectory } from "./pack.js";
 import { resolvePackageInput } from "./package-input.js";
@@ -39,6 +50,8 @@ import { detectExecutableVersion } from "./runtime.js";
 import { inspectTarball } from "./tarball.js";
 
 export interface TestPackageOptions {
+  readonly actions?: readonly RuntimeActionInput[];
+  readonly bins?: readonly BinActionInput[];
   readonly concurrency?: number;
   readonly includeExplained?: boolean;
   readonly invokingDirectory?: string;
@@ -117,7 +130,8 @@ function notEvaluated(
     | "offline-cache-miss"
     | "resource-limit"
     | "runtime-unavailable"
-    | "unsupported-export-pattern",
+    | "unsupported-export-pattern"
+    | "unexpected-probe-failure",
   message: string,
 ): ProbeResult {
   return Object.freeze({
@@ -192,6 +206,7 @@ async function runtimeResult(
   consumer: InstalledConsumer,
   profile: ConsumerProfile,
   subpath: string,
+  actions: readonly RuntimeAction[],
 ): Promise<ProbeResult> {
   let detectedVersion: string;
   try {
@@ -216,7 +231,13 @@ async function runtimeResult(
     );
   }
 
-  const probe = await runRuntimeProbe(consumer, artifact.name, profile, subpath);
+  const probe = await runRuntimeProbe(
+    consumer,
+    artifact.name,
+    profile,
+    subpath,
+    actions,
+  );
   if (probe.timedOut || probe.truncated) {
     return notEvaluated(
       profile,
@@ -252,6 +273,128 @@ async function runtimeResult(
           [consumer.path]: "<consumer>",
         },
       },
+    ),
+  );
+}
+
+async function blockedRuntimeResult(
+  artifact: PackArtifact,
+  consumer: InstalledConsumer,
+  profile: ConsumerProfile,
+  subpath: string,
+): Promise<ProbeResult> {
+  const probe = await runRuntimeProbe(consumer, artifact.name, profile, subpath);
+  if (probe.timedOut || probe.truncated) {
+    return notEvaluated(
+      profile,
+      subpath,
+      "resource-limit",
+      probe.timedOut
+        ? "The deep-import probe exceeded the time limit."
+        : "The deep-import probe exceeded the output limit.",
+    );
+  }
+  if (
+    probe.exitCode !== 0 &&
+    /ERR_PACKAGE_PATH_NOT_EXPORTED/.test(`${probe.stdout}\n${probe.stderr}`)
+  ) {
+    return passed(profile, subpath);
+  }
+  if (probe.exitCode !== 0) {
+    return notEvaluated(
+      profile,
+      subpath,
+      "unexpected-probe-failure",
+      "The deep import failed without proving package encapsulation.",
+    );
+  }
+  return failed(
+    profile,
+    subpath,
+    createDiagnostic({
+      code: "PC1003",
+      command: `${profile.runtime.executable} <consumer>/${runtimeProbeFilename(artifact.name, profile.id.moduleSystem, subpath)}`,
+      evidence: "The private deep import evaluated successfully.",
+      explainedBy: null,
+      profile: profile.id,
+      reproducible: true,
+      severity: "error",
+      subpath,
+      title: "Package encapsulation failed",
+    }),
+  );
+}
+
+async function binResult(
+  artifact: PackArtifact,
+  consumer: InstalledConsumer,
+  profile: ConsumerProfile,
+  action: BinAction,
+): Promise<ProbeResult> {
+  const subpath = `./bin/${action.name}`;
+  let detectedVersion: string;
+  try {
+    detectedVersion = await detectExecutableVersion(
+      profile.runtime.executable,
+      consumer.path,
+    );
+  } catch {
+    return notEvaluated(
+      profile,
+      subpath,
+      "runtime-unavailable",
+      "The configured Node.js executable is unavailable.",
+    );
+  }
+  if (detectedVersion !== profile.runtime.version) {
+    return notEvaluated(
+      profile,
+      subpath,
+      "runtime-unavailable",
+      `The configured executable is Node.js ${detectedVersion}, not ${profile.runtime.version}.`,
+    );
+  }
+  if (!declaredBinNames(artifact.manifest).has(action.name)) {
+    return notEvaluated(
+      profile,
+      subpath,
+      "inapplicable-profile",
+      `The package does not declare the ${action.name} executable.`,
+    );
+  }
+  const probe = await runBinProbe(consumer, action.name, action.arguments);
+  if (probe.timedOut || probe.truncated) {
+    return notEvaluated(
+      profile,
+      subpath,
+      "resource-limit",
+      probe.timedOut
+        ? "The executable exceeded the time limit."
+        : "The executable exceeded the output limit.",
+    );
+  }
+  if (probe.exitCode === 0) {
+    return passed(profile, subpath);
+  }
+  return failed(
+    profile,
+    subpath,
+    createDiagnostic(
+      {
+        code: "PC1004",
+        command:
+          `<consumer>/node_modules/.bin/${action.name} ${action.arguments.join(" ")}`.trim(),
+        evidence:
+          `${probe.stdout}\n${probe.stderr}`.trim() ||
+          `The executable exited with code ${probe.exitCode}.`,
+        explainedBy: null,
+        profile: profile.id,
+        reproducible: true,
+        severity: "error",
+        subpath,
+        title: "Package executable failed",
+      },
+      { redactions: { [consumer.path]: "<consumer>" } },
     ),
   );
 }
@@ -399,6 +542,8 @@ export async function testPackage(
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 16) {
     throw new RangeError("concurrency must be an integer from 1 to 16");
   }
+  const actions = defineRuntimeActions(options.actions ?? []);
+  const bins = defineBinActions(options.bins ?? []);
 
   const artifact =
     resolved.kind === "directory"
@@ -448,12 +593,22 @@ export async function testPackage(
           );
         }
         const explicit = [
-          ...new Set([...exports.explicit, ...expansion.expanded]),
+          ...new Set([
+            ...exports.explicit,
+            ...expansion.expanded,
+            ...actions.map(({ subpath }) => subpath),
+          ]),
         ].sort(compareCodeUnits);
         const tasks = profiles.flatMap((profile) =>
-          (options.profiles === undefined ? explicit : profile.subpaths).map(
-            (subpath) => ({ profile, subpath }),
-          ),
+          [
+            ...new Set(
+              options.profiles === undefined
+                ? explicit
+                : [...profile.subpaths, ...actions.map(({ subpath }) => subpath)],
+            ),
+          ]
+            .sort(compareCodeUnits)
+            .map((subpath) => ({ profile, subpath })),
         );
         results.push(
           ...(await mapConcurrent(tasks, concurrency, async ({ profile, subpath }) => {
@@ -467,7 +622,13 @@ export async function testPackage(
               );
             }
             if (profile.id.typescriptResolution === null) {
-              return runtimeResult(artifact, consumer, profile, subpath);
+              return runtimeResult(
+                artifact,
+                consumer,
+                profile,
+                subpath,
+                actions.filter((action) => action.subpath === subpath),
+              );
             }
             if (!declaresTypes(artifact.manifest, subpath)) {
               return notEvaluated(
@@ -480,6 +641,32 @@ export async function testPackage(
             return typescriptResult(artifact, compiler, consumer, profile, subpath);
           })),
         );
+        const blockedSubpath = selectBlockedDeepImport(
+          artifact.manifest,
+          artifact.files.map(({ path }) => path),
+        );
+        if (blockedSubpath !== null && options.profiles === undefined) {
+          const blockedProfiles = profiles.filter(
+            (profile) =>
+              profile.id.typescriptResolution === null &&
+              declaredModuleSystems(artifact.manifest, ".").has(
+                profile.id.moduleSystem,
+              ),
+          );
+          results.push(
+            ...(await mapConcurrent(blockedProfiles, concurrency, async (profile) =>
+              blockedRuntimeResult(artifact, consumer, profile, blockedSubpath),
+            )),
+          );
+        }
+        const binProfile = profiles.find(({ id }) => id.typescriptResolution === null);
+        if (binProfile !== undefined) {
+          results.push(
+            ...(await mapConcurrent(bins, concurrency, async (action) =>
+              binResult(artifact, consumer, binProfile, action),
+            )),
+          );
+        }
       }
 
       const sortedResults = sortResults(
@@ -497,6 +684,8 @@ export async function testPackage(
           .sort(compareDiagnostics),
       );
       return Object.freeze({
+        actions,
+        bins,
         diagnostics,
         environment: Object.freeze({
           architecture: process.arch,

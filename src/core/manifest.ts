@@ -98,3 +98,23 @@ export function parsePackageManifest(value: unknown): PackageManifest {
     version: candidate.version,
   });
 }
+
+export function declaredBinNames(manifest: PackageManifest): ReadonlySet<string> {
+  if (typeof manifest.bin === "string") {
+    const slash = manifest.name.lastIndexOf("/");
+    return new Set([manifest.name.slice(slash + 1)]);
+  }
+  if (
+    manifest.bin !== null &&
+    manifest.bin !== undefined &&
+    !Array.isArray(manifest.bin) &&
+    typeof manifest.bin === "object"
+  ) {
+    return new Set(
+      Object.entries(manifest.bin)
+        .filter(([, target]) => typeof target === "string")
+        .map(([name]) => name),
+    );
+  }
+  return new Set();
+}

@@ -1,4 +1,5 @@
 import type { IncumbentFinding, IncumbentTool } from "../integrations/types.js";
+import type { BinAction, RuntimeAction } from "../profiles/action.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { PackedFile } from "./pack.js";
 import type { ProbeResult } from "./result.js";
@@ -24,6 +25,8 @@ export interface ReportEnvironment {
 }
 
 export interface PackageReport {
+  readonly actions: readonly RuntimeAction[];
+  readonly bins: readonly BinAction[];
   readonly diagnostics: readonly Diagnostic[];
   readonly environment: ReportEnvironment;
   readonly incumbentFindings: readonly IncumbentFinding[];

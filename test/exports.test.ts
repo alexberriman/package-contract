@@ -5,6 +5,7 @@ import {
   declaredModuleSystems,
   enumerateExportSubpaths,
   expandExportPatterns,
+  selectBlockedDeepImport,
 } from "../src/profiles/exports.js";
 
 function manifest(overrides: Partial<PackageManifest> = {}): PackageManifest {
@@ -134,5 +135,26 @@ describe("declaredModuleSystems", () => {
         "./private",
       ),
     ]).toEqual([]);
+  });
+});
+
+describe("selectBlockedDeepImport", () => {
+  it("selects one deterministic private JavaScript path behind exports", () => {
+    expect(
+      selectBlockedDeepImport(
+        manifest({ exports: { ".": "./index.js" }, type: "module" }),
+        ["private/z.js", "index.js", "private/a.js", "readme.md"],
+      ),
+    ).toBe("./index.js");
+  });
+
+  it("returns null without an exports boundary or private JavaScript", () => {
+    expect(selectBlockedDeepImport(manifest(), ["private.js"])).toBeNull();
+    expect(
+      selectBlockedDeepImport(
+        manifest({ exports: { ".": "./index.js" }, type: "module" }),
+        ["readme.md"],
+      ),
+    ).toBeNull();
   });
 });

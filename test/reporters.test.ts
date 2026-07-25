@@ -31,6 +31,8 @@ function report(withDiagnostic = true): PackageReport {
   });
 
   return {
+    actions: [],
+    bins: [],
     diagnostics: withDiagnostic ? [diagnostic] : [],
     environment: {
       architecture: "arm64",

@@ -33,6 +33,8 @@ let explainedTarball = "";
 let comparisonBeforeTarball = "";
 let comparisonAfterTarball = "";
 let comparisonDriftTarball = "";
+let actionTarball = "";
+let binTarball = "";
 
 async function makeFixture(
   name: string,
@@ -191,6 +193,38 @@ beforeAll(async () => {
     {},
     { "is-number": "7.0.0" },
     { name: "package-contract-compare-fixture" },
+  );
+  actionTarball = await makeFixture(
+    "package-contract-action-fixture",
+    [
+      "export const asset = new URL('./missing.txt', import.meta.url);",
+      "export async function load() { await import('./missing.js'); }",
+      "export function sum(left, right) { return left + right; }",
+      "export const value = 42;",
+      "",
+    ].join("\n"),
+    {
+      "index.d.ts": [
+        "export declare const asset: URL;",
+        "export declare function load(): Promise<void>;",
+        "export declare function sum(left: number, right: number): number;",
+        "export declare const value: number;",
+        "",
+      ].join("\n"),
+    },
+  );
+  binTarball = await makeFixture(
+    "package-contract-bin-fixture",
+    "export const value = 42;\n",
+    {
+      "cli.js":
+        "#!/usr/bin/env node\nif (process.argv.includes('--fail')) throw new Error('requested failure');\n",
+    },
+    {},
+    {
+      bin: { "fixture-cli": "./cli.js" },
+      files: ["index.js", "index.d.ts", "cli.js"],
+    },
   );
 });
 
@@ -357,12 +391,15 @@ describe("testPackage", () => {
   it("passes a healthy tarball in a clean ESM consumer", async () => {
     const report = await testPackage({ kind: "tarball", path: goodTarball });
 
-    expect(report.results.filter(({ state }) => state === "pass")).toHaveLength(4);
+    expect(report.results.filter(({ state }) => state === "pass")).toHaveLength(5);
     expect(
       report.results.filter(({ state }) => state === "not-evaluated"),
     ).toHaveLength(3);
     expect(report.diagnostics).toEqual([]);
     expect(report.lockfileSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(report.results).toContainEqual(
+      expect.objectContaining({ state: "pass", subpath: "./index.js" }),
+    );
   });
 
   it("reproduces a runtime failure deterministically", async () => {
@@ -540,6 +577,174 @@ describe("testPackage", () => {
     });
   });
 
+  it("runs explicit export and function-call consumer actions", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: actionTarball },
+      {
+        actions: [
+          { exportName: "value", kind: "export", subpath: "." },
+          {
+            arguments: [20, 22],
+            exportName: "sum",
+            kind: "call",
+            subpath: ".",
+          },
+        ],
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.diagnostics).toEqual([]);
+    expect(report.results).toEqual([
+      expect.objectContaining({ state: "pass", subpath: "." }),
+    ]);
+  });
+
+  it.each([
+    [
+      "lazy dynamic import",
+      { exportName: "load", kind: "call" as const, subpath: "." },
+    ],
+    [
+      "exported asset",
+      { exportName: "asset", kind: "read-file" as const, subpath: "." },
+    ],
+    [
+      "missing named export",
+      { exportName: "missing", kind: "export" as const, subpath: "." },
+    ],
+  ])("reproduces an explicit %s action failure", async (_label, action) => {
+    const report = await testPackage(
+      { kind: "tarball", path: actionTarball },
+      {
+        actions: [action],
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "PC1001",
+        reproducible: true,
+        subpath: ".",
+      }),
+    ]);
+    if (_label === "lazy dynamic import") {
+      const diagnostic = report.diagnostics[0];
+      if (diagnostic === undefined) {
+        throw new Error("expected an action diagnostic");
+      }
+      const root = await mkdtemp(join(tmpdir(), "package-contract-action-repro-test-"));
+      try {
+        const reproduction = await materializeReproduction({
+          diagnosticId: diagnostic.id,
+          outputRoot: root,
+          report,
+          tarballPath: actionTarball,
+        });
+        expect(await readFile(join(reproduction.path, "probe.mjs"), "utf8")).toContain(
+          'subject["load"]',
+        );
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    }
+  });
+
+  it("runs declared package executables only through explicit actions", async () => {
+    const profile = {
+      moduleSystem: "esm" as const,
+      runtime: { version: process.version },
+    };
+    const passing = await testPackage(
+      { kind: "tarball", path: binTarball },
+      { bins: [{ name: "fixture-cli" }], profiles: [profile] },
+    );
+    expect(passing.diagnostics).toEqual([]);
+    expect(passing.results).toContainEqual(
+      expect.objectContaining({
+        state: "pass",
+        subpath: "./bin/fixture-cli",
+      }),
+    );
+
+    const failing = await testPackage(
+      { kind: "tarball", path: binTarball },
+      {
+        bins: [{ arguments: ["--fail"], name: "fixture-cli" }],
+        profiles: [profile],
+      },
+    );
+    expect(failing.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "PC1004",
+        reproducible: true,
+        subpath: "./bin/fixture-cli",
+      }),
+    ]);
+    const diagnostic = failing.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected an executable diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-bin-repro-test-"));
+    try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report: failing,
+        tarballPath: binTarball,
+      });
+      expect(await readFile(join(reproduction.path, "probe.mjs"), "utf8")).toContain(
+        '["--fail"]',
+      );
+      await execFileAsync(
+        "npm",
+        ["install", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: reproduction.path },
+      );
+      await expect(
+        execFileAsync("npm", ["run", "reproduce"], {
+          cwd: reproduction.path,
+        }),
+      ).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("marks an undeclared executable action as inapplicable", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: goodTarball },
+      {
+        bins: [{ name: "missing-cli" }],
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.results).toContainEqual(
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: "inapplicable-profile" }),
+        state: "not-evaluated",
+        subpath: "./bin/missing-cli",
+      }),
+    );
+  });
+
   it("packs and tests a package directory", async () => {
     const directory = join(fixtureRoot, "package-contract-good-fixture");
     const report = await testPackage({ kind: "directory", path: directory });
@@ -564,6 +769,7 @@ describe("testPackage", () => {
     const report = await testPackage(
       { kind: "tarball", path: dualTarball },
       {
+        actions: [{ exportName: "value", kind: "export", subpath: "." }],
         profiles: [
           {
             moduleSystem: "cjs",

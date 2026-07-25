@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { typescriptCompilerOptions } from "../probes/typescript.js";
+import { runtimeProbeSource } from "./consumer.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { hashFile } from "./hash.js";
 import type { PackageReport } from "./report.js";
@@ -35,19 +36,33 @@ function entryFile(diagnostic: Diagnostic): string {
   if (diagnostic.code === "PC1002") {
     return diagnostic.profile.moduleSystem === "esm" ? "probe.mts" : "probe.cts";
   }
+  if (diagnostic.code === "PC1004") {
+    return "probe.mjs";
+  }
   return diagnostic.profile.moduleSystem === "esm" ? "probe.mjs" : "probe.cjs";
 }
 
-function entrySource(diagnostic: Diagnostic, packageName: string): string {
+function entrySource(diagnostic: Diagnostic, report: PackageReport): string {
+  const packageName = report.package.name;
   const specifier = packageSpecifier(packageName, diagnostic.subpath);
   if (diagnostic.code === "PC1002") {
     return diagnostic.profile.moduleSystem === "esm"
       ? `import * as subject from ${JSON.stringify(specifier)};\nvoid subject;\n`
       : `import subject = require(${JSON.stringify(specifier)});\nvoid subject;\n`;
   }
-  return diagnostic.profile.moduleSystem === "esm"
-    ? `await import(${JSON.stringify(specifier)});\n`
-    : `require(${JSON.stringify(specifier)});\n`;
+  if (diagnostic.code === "PC1004") {
+    const bin = report.bins.find(({ name }) => `./bin/${name}` === diagnostic.subpath);
+    if (bin === undefined) {
+      throw new Error("executable action is missing from the report");
+    }
+    return `import { spawnSync } from "node:child_process";\nimport { fileURLToPath } from "node:url";\nconst executable = fileURLToPath(new URL(${JSON.stringify(`./node_modules/.bin/${bin.name}`)}, import.meta.url));\nconst result = spawnSync(executable, ${JSON.stringify(bin.arguments)}, { stdio: "inherit" });\nprocess.exitCode = result.status ?? 1;\n`;
+  }
+  return runtimeProbeSource(
+    packageName,
+    diagnostic.profile.moduleSystem,
+    diagnostic.subpath,
+    report.actions.filter(({ subpath }) => subpath === diagnostic.subpath),
+  );
 }
 
 function reproductionPackage(diagnostic: Diagnostic, report: PackageReport): object {
@@ -90,7 +105,12 @@ export async function materializeReproduction(
   if (diagnostic === undefined) {
     throw new Error("diagnostic ID is not present in the report");
   }
-  if (diagnostic.code !== "PC1001" && diagnostic.code !== "PC1002") {
+  if (
+    diagnostic.code !== "PC1001" &&
+    diagnostic.code !== "PC1002" &&
+    diagnostic.code !== "PC1003" &&
+    diagnostic.code !== "PC1004"
+  ) {
     throw new Error("this diagnostic does not support a standalone reproduction");
   }
   const tarballPath = await realpath(resolve(options.tarballPath));
@@ -120,11 +140,9 @@ export async function materializeReproduction(
       `${JSON.stringify(reproductionPackage(diagnostic, options.report), null, 2)}\n`,
       { mode: 0o600 },
     ),
-    writeFile(
-      join(outputPath, entry),
-      entrySource(diagnostic, options.report.package.name),
-      { mode: 0o600 },
-    ),
+    writeFile(join(outputPath, entry), entrySource(diagnostic, options.report), {
+      mode: 0o600,
+    }),
     writeFile(
       join(outputPath, "README.md"),
       `# Reproduction ${diagnostic.id}\n\nRun:\n\n\`\`\`sh\nnpm install --ignore-scripts --no-audit --no-fund\nnpm run reproduce\n\`\`\`\n`,
