@@ -140,60 +140,73 @@ function nativeDiagnostic(
 
 async function runClassic(
   request: TypeScriptWorkerRequest,
-): Promise<readonly StructuredTypeScriptDiagnostic[]> {
+): Promise<TypeScriptWorkerResponse["projects"]> {
   const imported = (await import(
     pathToFileURL(request.compiler.apiEntryPath).href
   )) as { readonly default?: ClassicCompiler } & Partial<ClassicCompiler>;
   const compiler = (imported.default ?? imported) as ClassicCompiler;
-  const config = compiler.readConfigFile(request.tsconfigPath, compiler.sys.readFile);
-  if (config.error !== undefined) {
-    return [classicDiagnostic(compiler, config.error)];
-  }
-  const parsed = compiler.parseJsonConfigFileContent(
-    config.config,
-    compiler.sys,
-    request.consumerPath,
-    undefined,
-    request.tsconfigPath,
-  );
-  const program = compiler.createProgram({
-    options: parsed.options,
-    rootNames: parsed.fileNames,
+  return request.projects.map(({ id, tsconfigPath }) => {
+    const config = compiler.readConfigFile(tsconfigPath, compiler.sys.readFile);
+    if (config.error !== undefined) {
+      return {
+        diagnostics: [classicDiagnostic(compiler, config.error)],
+        id,
+      };
+    }
+    const parsed = compiler.parseJsonConfigFileContent(
+      config.config,
+      compiler.sys,
+      request.consumerPath,
+      undefined,
+      tsconfigPath,
+    );
+    const program = compiler.createProgram({
+      options: parsed.options,
+      rootNames: parsed.fileNames,
+    });
+    return {
+      diagnostics: [...parsed.errors, ...compiler.getPreEmitDiagnostics(program)].map(
+        (diagnostic) => classicDiagnostic(compiler, diagnostic),
+      ),
+      id,
+    };
   });
-  return [...parsed.errors, ...compiler.getPreEmitDiagnostics(program)].map(
-    (diagnostic) => classicDiagnostic(compiler, diagnostic),
-  );
 }
 
 async function runNative(
   request: TypeScriptWorkerRequest,
-): Promise<readonly StructuredTypeScriptDiagnostic[]> {
+): Promise<TypeScriptWorkerResponse["projects"]> {
   const imported = (await import(
     pathToFileURL(request.compiler.apiEntryPath).href
   )) as { readonly API: NativeApiConstructor };
   const api = new imported.API({ cwd: request.consumerPath });
   try {
     const snapshot = api.updateSnapshot({
-      openProjects: [request.tsconfigPath],
+      openProjects: request.projects.map(({ tsconfigPath }) => tsconfigPath),
     });
     try {
-      const project =
-        snapshot.getProject(request.tsconfigPath) ??
-        snapshot
-          .getProjects()
-          .find(({ configFileName }) => configFileName === request.tsconfigPath);
-      if (project === undefined) {
-        throw new Error("TypeScript did not load the generated project");
-      }
-      const diagnostics = [
-        ...project.program.getConfigFileParsingDiagnostics(),
-        ...project.program.getProgramDiagnostics(),
-        ...project.program.getGlobalDiagnostics(),
-        ...project.program.getSyntacticDiagnostics(),
-        ...project.program.getBindDiagnostics(),
-        ...project.program.getSemanticDiagnostics(),
-      ];
-      return diagnostics.map(nativeDiagnostic);
+      return request.projects.map(({ id, tsconfigPath }) => {
+        const project =
+          snapshot.getProject(tsconfigPath) ??
+          snapshot
+            .getProjects()
+            .find(({ configFileName }) => configFileName === tsconfigPath);
+        if (project === undefined) {
+          throw new Error("TypeScript did not load the generated project");
+        }
+        const diagnostics = [
+          ...project.program.getConfigFileParsingDiagnostics(),
+          ...project.program.getProgramDiagnostics(),
+          ...project.program.getGlobalDiagnostics(),
+          ...project.program.getSyntacticDiagnostics(),
+          ...project.program.getBindDiagnostics(),
+          ...project.program.getSemanticDiagnostics(),
+        ];
+        return {
+          diagnostics: diagnostics.map(nativeDiagnostic),
+          id,
+        };
+      });
     } finally {
       snapshot.dispose();
     }
@@ -210,12 +223,12 @@ async function main(): Promise<void> {
   const request = JSON.parse(
     await readFile(requestPath, "utf8"),
   ) as TypeScriptWorkerRequest;
-  const diagnostics =
+  const projects =
     request.compiler.kind === "native"
       ? await runNative(request)
       : await runClassic(request);
   const response: TypeScriptWorkerResponse = {
-    diagnostics,
+    projects,
     status: "completed",
     version: request.compiler.version,
   };

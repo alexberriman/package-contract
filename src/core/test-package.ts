@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { analyzeWithIncumbents } from "../integrations/incumbents.js";
 import { applyIncumbentExplanations } from "../integrations/suppression.js";
-import { formatTypeScriptEvidence, runTypeScriptProbe } from "../probes/typescript.js";
+import {
+  formatTypeScriptEvidence,
+  runTypeScriptProbe,
+  runTypeScriptProbes,
+  type TypeScriptProbeResult,
+} from "../probes/typescript.js";
 import type { ResolvedTypeScriptCompiler } from "../probes/typescript-contract.js";
 import { resolveTypeScriptCompiler } from "../probes/typescript-resolver.js";
 import {
@@ -405,6 +410,7 @@ async function typescriptResult(
   consumer: InstalledConsumer,
   profile: ConsumerProfile,
   subpath: string,
+  preparedProbe?: TypeScriptProbeResult,
 ): Promise<ProbeResult> {
   if (compiler === null) {
     return notEvaluated(
@@ -414,13 +420,9 @@ async function typescriptResult(
       "TypeScript could not be resolved from the invoking project.",
     );
   }
-  const probe = await runTypeScriptProbe(
-    compiler,
-    consumer,
-    artifact.name,
-    profile,
-    subpath,
-  );
+  const probe =
+    preparedProbe ??
+    (await runTypeScriptProbe(compiler, consumer, artifact.name, profile, subpath));
   if (probe.status !== "completed") {
     return notEvaluated(
       profile,
@@ -538,7 +540,7 @@ export async function testPackage(
   if (profiles.length === 0) {
     throw new TypeError("at least one consumer profile is required");
   }
-  const concurrency = options.concurrency ?? 4;
+  const concurrency = options.concurrency ?? 8;
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 16) {
     throw new RangeError("concurrency must be an integer from 1 to 16");
   }
@@ -599,17 +601,56 @@ export async function testPackage(
             ...actions.map(({ subpath }) => subpath),
           ]),
         ].sort(compareCodeUnits);
-        const tasks = profiles.flatMap((profile) =>
-          [
-            ...new Set(
-              options.profiles === undefined
-                ? explicit
-                : [...profile.subpaths, ...actions.map(({ subpath }) => subpath)],
-            ),
-          ]
-            .sort(compareCodeUnits)
-            .map((subpath) => ({ profile, subpath })),
-        );
+        const tasks =
+          options.profiles === undefined
+            ? explicit.flatMap((subpath) =>
+                profiles.map((profile) => ({ profile, subpath })),
+              )
+            : profiles.flatMap((profile) =>
+                [
+                  ...new Set([
+                    ...profile.subpaths,
+                    ...actions.map(({ subpath }) => subpath),
+                  ]),
+                ]
+                  .sort(compareCodeUnits)
+                  .map((subpath) => ({ profile, subpath })),
+              );
+        const typeBatches = new Map<
+          ConsumerProfile,
+          Promise<ReadonlyMap<string, TypeScriptProbeResult>>
+        >();
+        const typeBatch = (
+          profile: ConsumerProfile,
+        ): Promise<ReadonlyMap<string, TypeScriptProbeResult>> => {
+          const existing = typeBatches.get(profile);
+          if (existing !== undefined) {
+            return existing;
+          }
+          if (compiler === null) {
+            return Promise.resolve(new Map());
+          }
+          const batch = runTypeScriptProbes(
+            compiler,
+            consumer,
+            artifact.name,
+            tasks
+              .filter(
+                (task) =>
+                  task.profile === profile &&
+                  declaredModuleSystems(artifact.manifest, task.subpath).has(
+                    profile.id.moduleSystem,
+                  ) &&
+                  declaresTypes(artifact.manifest, task.subpath),
+              )
+              .map(({ subpath }) => ({ profile, subpath })),
+          ).then(
+            (outputs) =>
+              new Map(outputs.map(({ result, subpath }) => [subpath, result])),
+          );
+          typeBatches.set(profile, batch);
+          return batch;
+        };
         results.push(
           ...(await mapConcurrent(tasks, concurrency, async ({ profile, subpath }) => {
             const systems = declaredModuleSystems(artifact.manifest, subpath);
@@ -638,7 +679,14 @@ export async function testPackage(
                 "The package does not claim TypeScript declarations for this subpath.",
               );
             }
-            return typescriptResult(artifact, compiler, consumer, profile, subpath);
+            return typescriptResult(
+              artifact,
+              compiler,
+              consumer,
+              profile,
+              subpath,
+              (await typeBatch(profile)).get(subpath),
+            );
           })),
         );
         const blockedSubpath = selectBlockedDeepImport(

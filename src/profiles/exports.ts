@@ -231,6 +231,13 @@ export function expandExportPatterns(
         const prefix = targetParts[0]?.slice(2) ?? "";
         const suffix = targetParts[1] ?? "";
         for (const file of packedFiles) {
+          if (
+            !file.endsWith(".js") &&
+            !file.endsWith(".mjs") &&
+            !file.endsWith(".cjs")
+          ) {
+            continue;
+          }
           if (!file.startsWith(prefix) || !file.endsWith(suffix)) {
             continue;
           }

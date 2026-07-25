@@ -26,6 +26,15 @@ export type TypeScriptProbeResult =
       readonly status: "resource-limit" | "unavailable";
     };
 
+export interface TypeScriptProbeInput {
+  readonly profile: ConsumerProfile;
+  readonly subpath: string;
+}
+
+export interface TypeScriptProbeOutput extends TypeScriptProbeInput {
+  readonly result: TypeScriptProbeResult;
+}
+
 function packageSpecifier(packageName: string, subpath: string): string {
   return subpath === "." ? packageName : `${packageName}/${subpath.slice(2)}`;
 }
@@ -112,49 +121,75 @@ export async function runTypeScriptProbe(
   profile: ConsumerProfile,
   subpath: string,
 ): Promise<TypeScriptProbeResult> {
-  const resolution = profile.id.typescriptResolution;
-  if (resolution === null) {
-    throw new TypeError("TypeScript probe requires a resolution mode");
-  }
-  if (profile.id.moduleSystem === "cjs" && resolution === "bundler") {
-    throw new TypeError("Bundler resolution is not applicable to CommonJS");
-  }
-
-  const extension = profile.id.moduleSystem === "esm" ? "mts" : "cts";
-  const specifier = packageSpecifier(packageName, subpath);
-  const token = createHash("sha256").update(specifier).digest("hex").slice(0, 12);
-  const entry = join(consumer.path, `probe-${token}.${extension}`);
-  const tsconfig = join(
-    consumer.path,
-    `tsconfig-${token}.${resolution}.${extension}.json`,
-  );
-  const requestPath = join(
-    consumer.path,
-    `typescript-${token}.${resolution}.${extension}.json`,
-  );
-  const source =
-    profile.id.moduleSystem === "esm"
-      ? `import * as subject from ${JSON.stringify(specifier)};\nvoid subject;\n`
-      : `import subject = require(${JSON.stringify(specifier)});\nvoid subject;\n`;
-  await Promise.all([
-    writeFile(entry, source, { mode: 0o600 }),
-    writeFile(
-      tsconfig,
-      `${JSON.stringify(
-        {
-          compilerOptions: typescriptCompilerOptions(resolution),
-          files: [`./${basename(entry)}`],
-        },
-        null,
-        2,
-      )}\n`,
-      { mode: 0o600 },
-    ),
+  const [output] = await runTypeScriptProbes(compiler, consumer, packageName, [
+    { profile, subpath },
   ]);
+  if (output === undefined) {
+    throw new Error("TypeScript probe returned no result");
+  }
+  return output.result;
+}
+
+export async function runTypeScriptProbes(
+  compiler: ResolvedTypeScriptCompiler,
+  consumer: InstalledConsumer,
+  packageName: string,
+  inputs: readonly TypeScriptProbeInput[],
+): Promise<readonly TypeScriptProbeOutput[]> {
+  if (inputs.length === 0) {
+    return Object.freeze([]);
+  }
+  const projects = await Promise.all(
+    inputs.map(async ({ profile, subpath }, index) => {
+      const resolution = profile.id.typescriptResolution;
+      if (resolution === null) {
+        throw new TypeError("TypeScript probe requires a resolution mode");
+      }
+      if (profile.id.moduleSystem === "cjs" && resolution === "bundler") {
+        throw new TypeError("Bundler resolution is not applicable to CommonJS");
+      }
+      const extension = profile.id.moduleSystem === "esm" ? "mts" : "cts";
+      const specifier = packageSpecifier(packageName, subpath);
+      const token = createHash("sha256")
+        .update(JSON.stringify([profile.id, subpath, index]))
+        .digest("hex")
+        .slice(0, 12);
+      const entry = join(consumer.path, `probe-${token}.${extension}`);
+      const tsconfig = join(
+        consumer.path,
+        `tsconfig-${token}.${resolution}.${extension}.json`,
+      );
+      const source =
+        profile.id.moduleSystem === "esm"
+          ? `import * as subject from ${JSON.stringify(specifier)};\nvoid subject;\n`
+          : `import subject = require(${JSON.stringify(specifier)});\nvoid subject;\n`;
+      await Promise.all([
+        writeFile(entry, source, { mode: 0o600 }),
+        writeFile(
+          tsconfig,
+          `${JSON.stringify(
+            {
+              compilerOptions: typescriptCompilerOptions(resolution),
+              files: [`./${basename(entry)}`],
+            },
+            null,
+            2,
+          )}\n`,
+          { mode: 0o600 },
+        ),
+      ]);
+      return { id: token, profile, subpath, tsconfigPath: tsconfig };
+    }),
+  );
+  const batchToken = createHash("sha256")
+    .update(JSON.stringify(projects.map(({ id }) => id)))
+    .digest("hex")
+    .slice(0, 12);
+  const requestPath = join(consumer.path, `typescript-batch-${batchToken}.json`);
   const request: TypeScriptWorkerRequest = {
     compiler,
     consumerPath: consumer.path,
-    tsconfigPath: tsconfig,
+    projects: projects.map(({ id, tsconfigPath }) => ({ id, tsconfigPath })),
   };
   await writeFile(requestPath, `${JSON.stringify(request)}\n`, { mode: 0o600 });
 
@@ -169,48 +204,89 @@ export async function runTypeScriptProbe(
     timeoutMs: 60_000,
   });
   if (result.timedOut || result.truncated) {
-    return Object.freeze({
+    const unavailable = Object.freeze({
       message: result.timedOut
         ? "TypeScript exceeded the time limit."
         : "TypeScript exceeded the output limit.",
       status: "resource-limit",
-    });
+    } as const);
+    return Object.freeze(
+      projects.map(({ profile, subpath }) => ({
+        profile,
+        result: unavailable,
+        subpath,
+      })),
+    );
   }
   if (result.exitCode !== 0) {
-    return Object.freeze({
+    const unavailable = Object.freeze({
       message: "TypeScript could not evaluate the generated consumer project.",
       status: "unavailable",
-    });
+    } as const);
+    return Object.freeze(
+      projects.map(({ profile, subpath }) => ({
+        profile,
+        result: unavailable,
+        subpath,
+      })),
+    );
   }
 
   let response: TypeScriptWorkerResponse;
   try {
     response = JSON.parse(result.stdout) as TypeScriptWorkerResponse;
   } catch {
-    return Object.freeze({
+    const unavailable = Object.freeze({
       message: "TypeScript returned an invalid structured response.",
       status: "unavailable",
-    });
+    } as const);
+    return Object.freeze(
+      projects.map(({ profile, subpath }) => ({
+        profile,
+        result: unavailable,
+        subpath,
+      })),
+    );
   }
   if (
     response.status !== "completed" ||
     response.version !== compiler.version ||
-    !Array.isArray(response.diagnostics)
+    !Array.isArray(response.projects)
   ) {
-    return Object.freeze({
+    const unavailable = Object.freeze({
       message: "TypeScript returned an unsupported structured response.",
       status: "unavailable",
-    });
+    } as const);
+    return Object.freeze(
+      projects.map(({ profile, subpath }) => ({
+        profile,
+        result: unavailable,
+        subpath,
+      })),
+    );
   }
-  return Object.freeze({
-    diagnostics: normalizeDiagnostics(
-      response.diagnostics,
-      consumer.path,
-      compiler.packagePath,
-    ),
-    status: "completed",
-    version: response.version,
-  });
+  const responses = new Map(response.projects.map((project) => [project.id, project]));
+  return Object.freeze(
+    projects.map(({ id, profile, subpath }) => {
+      const project = responses.get(id);
+      const probeResult: TypeScriptProbeResult =
+        project === undefined || !Array.isArray(project.diagnostics)
+          ? Object.freeze({
+              message: "TypeScript omitted a generated consumer project.",
+              status: "unavailable",
+            })
+          : Object.freeze({
+              diagnostics: normalizeDiagnostics(
+                project.diagnostics,
+                consumer.path,
+                compiler.packagePath,
+              ),
+              status: "completed",
+              version: response.version,
+            });
+      return Object.freeze({ profile, result: probeResult, subpath });
+    }),
+  );
 }
 
 export function formatTypeScriptEvidence(

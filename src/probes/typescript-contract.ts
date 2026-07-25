@@ -19,11 +19,17 @@ export interface StructuredTypeScriptDiagnostic {
 export interface TypeScriptWorkerRequest {
   readonly compiler: ResolvedTypeScriptCompiler;
   readonly consumerPath: string;
-  readonly tsconfigPath: string;
+  readonly projects: readonly {
+    readonly id: string;
+    readonly tsconfigPath: string;
+  }[];
 }
 
 export interface TypeScriptWorkerResponse {
-  readonly diagnostics: readonly StructuredTypeScriptDiagnostic[];
+  readonly projects: readonly {
+    readonly diagnostics: readonly StructuredTypeScriptDiagnostic[];
+    readonly id: string;
+  }[];
   readonly status: "completed";
   readonly version: string;
 }
