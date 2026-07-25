@@ -29,7 +29,9 @@ let dependencyTarball = "";
 let typeFailureTarball = "";
 let dualTarball = "";
 let patternTarball = "";
+let unsafePatternTarball = "";
 let untypedTarball = "";
+let installationFailureTarball = "";
 let explainedTarball = "";
 let comparisonBeforeTarball = "";
 let comparisonAfterTarball = "";
@@ -200,6 +202,22 @@ beforeAll(async () => {
       files: ["index.js", "index.d.ts", "features"],
     },
   );
+  unsafePatternTarball = await makeFixture(
+    "package-contract-unsafe-pattern-fixture",
+    "export const value = 42;\n",
+    { "features/a.js": "export const feature = true;\n" },
+    {},
+    {
+      exports: {
+        ".": {
+          types: "./index.d.ts",
+          import: "./index.js",
+        },
+        "./features/*": "./features/no-placeholder.js",
+      },
+      files: ["index.js", "index.d.ts", "features"],
+    },
+  );
   untypedTarball = await makeFixture(
     "package-contract-untyped-fixture",
     "export const value = 42;\n",
@@ -209,6 +227,12 @@ beforeAll(async () => {
       exports: { ".": { import: "./index.js" } },
       files: ["index.js"],
     },
+  );
+  installationFailureTarball = await makeFixture(
+    "package-contract-installation-failure-fixture",
+    "export const value = 42;\n",
+    {},
+    { "package-contract-workspace-only": "workspace:*" },
   );
   explainedTarball = await makeFixture(
     "package-contract-explained-fixture",
@@ -980,6 +1004,93 @@ describe("testPackage", () => {
       state: "not-evaluated",
     });
     expect(compiler.environment.typescript).toBeNull();
+  });
+
+  it("rejects invalid orchestration limits and an empty profile matrix", async () => {
+    await expect(
+      testPackage({ kind: "tarball", path: goodTarball }, { concurrency: 0 }),
+    ).rejects.toThrow("concurrency must be an integer from 1 to 16");
+    await expect(
+      testPackage({ kind: "tarball", path: goodTarball }, { concurrency: 17 }),
+    ).rejects.toThrow("concurrency must be an integer from 1 to 16");
+    await expect(
+      testPackage({ kind: "tarball", path: goodTarball }, { concurrency: 1.5 }),
+    ).rejects.toThrow("concurrency must be an integer from 1 to 16");
+    await expect(
+      testPackage({ kind: "tarball", path: goodTarball }, { profiles: [] }),
+    ).rejects.toThrow("at least one consumer profile is required");
+  });
+
+  it("rejects a runtime executable whose detected version does not match", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: goodTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: {
+              executable: process.execPath,
+              version: "99.0.0",
+            },
+          },
+        ],
+      },
+    );
+
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: "runtime-unavailable",
+          message: expect.stringContaining("not 99.0.0"),
+        }),
+        state: "not-evaluated",
+      }),
+    ]);
+  });
+
+  it("reports unsafe wildcard exports as explicitly not evaluated", async () => {
+    const report = await testPackage({
+      kind: "tarball",
+      path: unsafePatternTarball,
+    });
+
+    expect(report.results).toContainEqual(
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: "unsupported-export-pattern",
+        }),
+        state: "not-evaluated",
+        subpath: "./features/*",
+      }),
+    );
+  });
+
+  it("returns a stable installation diagnostic for an unusable local dependency", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: installationFailureTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        diagnostics: [
+          expect.objectContaining({
+            code: "PC1000",
+            reproducible: false,
+          }),
+        ],
+        state: "fail",
+        subpath: ".",
+      }),
+    ]);
+    expect(JSON.stringify(report)).not.toContain(fixtureRoot);
   });
 
   it("expands safe wildcard exports and skips unclaimed types", async () => {
