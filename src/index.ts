@@ -22,6 +22,11 @@ export type {
   ReportEnvironment,
   RuntimePlatform,
 } from "./core/report.js";
+export {
+  type MaterializeReproductionOptions,
+  materializeReproduction,
+  type Reproduction,
+} from "./core/reproduction.js";
 export type {
   EvaluationState,
   NotEvaluatedReason,

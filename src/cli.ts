@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { comparePackages } from "./core/compare-packages.js";
 import type { PackageInput } from "./core/input.js";
+import { packDirectory } from "./core/pack.js";
+import { materializeReproduction } from "./core/reproduction.js";
 import { testPackage } from "./core/test-package.js";
 import { renderHumanComparison } from "./reporters/comparison.js";
 import { renderGitHubReport } from "./reporters/github.js";
@@ -28,6 +30,7 @@ Options:
   --json               Emit a deterministic JSON report
   --offline            Require npm to install from its isolated cache
   --reporter <name>    Use the human, json, or github reporter
+  --repro <id>         Write a safe runnable reproduction under ./repros
 `;
 
 type Reporter = "github" | "human" | "json";
@@ -64,6 +67,7 @@ async function main(): Promise<void> {
       json: { type: "boolean" },
       offline: { type: "boolean" },
       reporter: { type: "string" },
+      repro: { type: "string" },
       version: { short: "v", type: "boolean" },
     },
     strict: true,
@@ -117,19 +121,39 @@ async function main(): Promise<void> {
   }
 
   const input = await packageInput(positionals[1] ?? ".");
-  const report = await testPackage(input, {
-    includeExplained: values["include-explained"] === true,
-    offline: values.offline === true,
-  });
-  const output =
-    reporter === "json"
-      ? serializeJsonReport(report)
-      : reporter === "github"
-        ? renderGitHubReport(report)
-        : renderHumanReport(report);
-  process.stdout.write(output);
-  if (report.diagnostics.some(({ severity }) => severity === "error")) {
-    process.exitCode = 1;
+  const packed =
+    values.repro !== undefined && input.kind === "directory"
+      ? await packDirectory(input.path)
+      : null;
+  try {
+    const checkedInput: PackageInput =
+      packed === null ? input : { kind: "tarball", path: packed.path };
+    const report = await testPackage(checkedInput, {
+      includeExplained: values["include-explained"] === true,
+      offline: values.offline === true,
+    });
+    const output =
+      reporter === "json"
+        ? serializeJsonReport(report)
+        : reporter === "github"
+          ? renderGitHubReport(report)
+          : renderHumanReport(report);
+    process.stdout.write(output);
+    if (values.repro !== undefined) {
+      const reproduction = await materializeReproduction({
+        diagnosticId: values.repro,
+        report,
+        tarballPath: checkedInput.path,
+      });
+      process.stderr.write(
+        `Reproduction written to repros/${reproduction.diagnosticId}\n`,
+      );
+    }
+    if (report.diagnostics.some(({ severity }) => severity === "error")) {
+      process.exitCode = 1;
+    }
+  } finally {
+    await packed?.cleanup();
   }
 }
 

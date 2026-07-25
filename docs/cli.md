@@ -15,6 +15,19 @@ the meaning of residual findings.
 Strict offline installation is available with `--offline`. A missing cached
 dependency becomes `not-evaluated`; the tool never calls that state compatible.
 
+## Reproductions
+
+Run a check once to obtain a diagnostic ID, then materialize that exact failure:
+
+```sh
+package-contract check . --repro <diagnostic-id>
+```
+
+The output directory is `repros/<diagnostic-id>`. It contains only an immutable
+copy of the tarball, a minimal consumer manifest and probe, an optional
+TypeScript configuration, and a short README. Existing directories are never
+overwritten. Lifecycle scripts remain disabled in the provided install command.
+
 ## Compare
 
 ```sh

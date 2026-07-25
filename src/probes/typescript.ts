@@ -30,7 +30,7 @@ function packageSpecifier(packageName: string, subpath: string): string {
   return subpath === "." ? packageName : `${packageName}/${subpath.slice(2)}`;
 }
 
-function compilerOptions(
+export function typescriptCompilerOptions(
   resolution: NonNullable<ConsumerProfile["id"]["typescriptResolution"]>,
 ): Readonly<Record<string, unknown>> {
   const shared = {
@@ -142,7 +142,7 @@ export async function runTypeScriptProbe(
       tsconfig,
       `${JSON.stringify(
         {
-          compilerOptions: compilerOptions(resolution),
+          compilerOptions: typescriptCompilerOptions(resolution),
           files: [`./${basename(entry)}`],
         },
         null,

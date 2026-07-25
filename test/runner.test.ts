@@ -8,7 +8,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runRootEsmConsumer } from "../src/core/consumer.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
-import { comparePackages, defineConsumer, testPackage } from "../src/index.js";
+import {
+  comparePackages,
+  defineConsumer,
+  materializeReproduction,
+  testPackage,
+} from "../src/index.js";
 import {
   formatTypeScriptEvidence,
   runTypeScriptProbe,
@@ -368,11 +373,140 @@ describe("testPackage", () => {
     expect(first.diagnostics).toHaveLength(1);
     expect(first.diagnostics[0]).toMatchObject({
       code: "PC1001",
-      reproducible: false,
+      reproducible: true,
       subpath: ".",
     });
     expect(first.diagnostics[0]?.evidence).toContain("<consumer>");
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+
+  it("materializes an allowlisted runnable reproduction without host paths", async () => {
+    const report = await testPackage({ kind: "tarball", path: badTarball });
+    const diagnostic = report.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a residual diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-repro-test-"));
+    try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report,
+        tarballPath: badTarball,
+      });
+
+      expect(reproduction.files).toEqual([
+        "README.md",
+        "package.json",
+        "package.tgz",
+        "probe.mjs",
+      ]);
+      const manifest = await readFile(join(reproduction.path, "package.json"), "utf8");
+      expect(manifest).not.toContain(fixtureRoot);
+      await execFileAsync(
+        "npm",
+        ["install", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: reproduction.path },
+      );
+      await expect(
+        execFileAsync("npm", ["run", "reproduce"], {
+          cwd: reproduction.path,
+        }),
+      ).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects invalid reproduction identity, artifacts, and overwrites", async () => {
+    const report = await testPackage({ kind: "tarball", path: badTarball });
+    const diagnostic = report.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a residual diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-repro-guard-test-"));
+    try {
+      await expect(
+        materializeReproduction({
+          diagnosticId: "0000000000000000",
+          outputRoot: root,
+          report,
+          tarballPath: badTarball,
+        }),
+      ).rejects.toThrow("diagnostic ID is not present");
+      await expect(
+        materializeReproduction({
+          diagnosticId: diagnostic.id,
+          outputRoot: root,
+          report,
+          tarballPath: goodTarball,
+        }),
+      ).rejects.toThrow("tarball does not match");
+
+      await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report,
+        tarballPath: badTarball,
+      });
+      await expect(
+        materializeReproduction({
+          diagnosticId: diagnostic.id,
+          outputRoot: root,
+          report,
+          tarballPath: badTarball,
+        }),
+      ).rejects.toMatchObject({ code: "EEXIST" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("materializes a strict TypeScript reproduction", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: typeFailureTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+            typescriptResolution: "node16",
+          },
+        ],
+      },
+    );
+    const diagnostic = report.diagnostics.find(({ code }) => code === "PC1002");
+    if (diagnostic === undefined) {
+      throw new Error("expected a TypeScript diagnostic");
+    }
+    const root = await mkdtemp(join(tmpdir(), "package-contract-ts-repro-test-"));
+    try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report,
+        tarballPath: typeFailureTarball,
+      });
+      expect(reproduction.files).toEqual([
+        "README.md",
+        "package.json",
+        "package.tgz",
+        "probe.mts",
+        "tsconfig.json",
+      ]);
+      expect(
+        JSON.parse(await readFile(join(reproduction.path, "tsconfig.json"), "utf8")),
+      ).toMatchObject({
+        compilerOptions: {
+          module: "Node16",
+          moduleResolution: "Node16",
+          strict: true,
+        },
+        files: ["./probe.mts"],
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("hides causally explained failures unless explicitly included", async () => {
