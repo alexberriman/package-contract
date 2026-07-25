@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PackageManifest } from "../src/core/manifest.js";
 import {
   declaredModuleSystems,
+  declaresTypes,
   enumerateExportSubpaths,
   expandExportPatterns,
   selectBlockedDeepImport,
@@ -27,6 +28,10 @@ describe("enumerateExportSubpaths", () => {
         manifest({ exports: { import: "./index.js", types: "./index.d.ts" } }),
       ),
     ).toEqual({ explicit: ["."], patterns: [] });
+    expect(enumerateExportSubpaths(manifest({ exports: "./index.js" }))).toEqual({
+      explicit: ["."],
+      patterns: [],
+    });
   });
 
   it("sorts explicit subpaths and separates patterns", () => {
@@ -126,6 +131,14 @@ describe("declaredModuleSystems", () => {
         ".",
       ),
     ]).toEqual(["cjs"]);
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: ["./ignored.json", "./index.cjs", "./index.mjs"],
+        }),
+        ".",
+      ),
+    ]).toEqual(["cjs", "esm"]);
   });
 
   it("returns no claim for a blocked or absent subpath", () => {
@@ -135,6 +148,105 @@ describe("declaredModuleSystems", () => {
         "./private",
       ),
     ]).toEqual([]);
+  });
+
+  it("handles nested custom conditions and ambiguous wildcard matches", () => {
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: {
+            ".": {
+              custom: {
+                import: "./index.js",
+                require: "./index.cjs",
+              },
+            },
+          },
+          type: "module",
+        }),
+        ".",
+      ),
+    ]).toEqual(["esm", "cjs"]);
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: {
+            "./feature/*": "./a/*.js",
+            "./feature/x*": "./b/*.js",
+          },
+          type: "module",
+        }),
+        "./feature/xy",
+      ),
+    ]).toEqual([]);
+  });
+});
+
+describe("declaresTypes", () => {
+  it("recognizes legacy fields, nested conditions, and arrays", () => {
+    expect(declaresTypes(manifest({ types: "./index.d.ts" }), ".")).toBe(true);
+    expect(declaresTypes(manifest({ typings: "./index.d.ts" }), ".")).toBe(true);
+    expect(declaresTypes(manifest({ types: "./index.d.ts" }), "./feature")).toBe(false);
+    expect(
+      declaresTypes(
+        manifest({
+          exports: {
+            ".": [{ import: "./index.js" }, { custom: { types: "./index.d.ts" } }],
+          },
+        }),
+        ".",
+      ),
+    ).toBe(true);
+    expect(
+      declaresTypes(manifest({ exports: { ".": { import: "./index.js" } } }), "."),
+    ).toBe(false);
+  });
+});
+
+describe("adversarial export patterns", () => {
+  it.each([
+    [{ "./bad**": "./dist/*.js" }, ["dist/a.js"]],
+    [{ "./bad/*": "../dist/*.js" }, ["dist/a.js"]],
+    [{ "./bad/*": "dist/*.js" }, ["dist/a.js"]],
+    [{ "./bad/*": "./dist/no-star.js" }, ["dist/a.js"]],
+    [{ "./bad/*": "./dist/*.js" }, ["dist/nested/a.js"]],
+    [{ "./bad/*": "./dist/*.js" }, ["dist/.js"]],
+    [{ "./bad/*": "./dist/*.js" }, ["dist/a.d.ts"]],
+  ])("leaves unsafe or unmatched patterns unresolved %#", (exports, files) => {
+    expect(
+      expandExportPatterns(
+        manifest({ exports }),
+        [Object.keys(exports)[0] as string],
+        files,
+      ).expanded,
+    ).toEqual([]);
+  });
+
+  it("walks nested and fallback target structures", () => {
+    expect(
+      expandExportPatterns(
+        manifest({
+          exports: {
+            "./feature/*": [null, { import: "./dist/*.mjs", require: "./dist/*.cjs" }],
+          },
+        }),
+        ["./feature/*"],
+        ["dist/a.mjs", "dist/a.cjs", "dist/readme.md"],
+      ),
+    ).toEqual({
+      expanded: ["./feature/a"],
+      unresolved: [],
+    });
+  });
+
+  it("returns unresolved patterns for non-object exports", () => {
+    expect(
+      expandExportPatterns(
+        manifest({ exports: "./index.js" }),
+        ["./feature/*"],
+        ["feature/a.js"],
+      ),
+    ).toEqual({ expanded: [], unresolved: ["./feature/*"] });
   });
 });
 

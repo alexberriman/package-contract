@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installConsumer, runRootEsmConsumer } from "../src/core/consumer.js";
+import { packDirectory } from "../src/core/pack.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
 import {
@@ -35,6 +36,56 @@ let comparisonAfterTarball = "";
 let comparisonDriftTarball = "";
 let actionTarball = "";
 let binTarball = "";
+
+function tarHeaderOffsets(tar: Buffer): number[] {
+  const offsets: number[] = [];
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+    offsets.push(offset);
+    const rawSize = header
+      .subarray(124, 136)
+      .toString("utf8")
+      .replaceAll("\0", "")
+      .trim();
+    const size = Number.parseInt(rawSize, 8);
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return offsets;
+}
+
+function tarEntryName(tar: Buffer, offset: number): string {
+  return tar
+    .subarray(offset, offset + 100)
+    .toString("utf8")
+    .replace(/\0.*$/s, "");
+}
+
+function writeTarField(
+  tar: Buffer,
+  offset: number,
+  start: number,
+  length: number,
+  value: string,
+): void {
+  tar.fill(0, offset + start, offset + start + length);
+  tar.write(value, offset + start, length, "utf8");
+}
+
+function refreshTarChecksum(tar: Buffer, offset: number): void {
+  tar.fill(32, offset + 148, offset + 156);
+  let checksum = 0;
+  for (let index = 0; index < 512; index += 1) {
+    checksum += tar[offset + index] ?? 0;
+  }
+  const value = checksum.toString(8).padStart(6, "0");
+  tar.write(value, offset + 148, 6, "ascii");
+  tar[offset + 154] = 0;
+  tar[offset + 155] = 32;
+}
 
 async function makeFixture(
   name: string,
@@ -384,6 +435,110 @@ describe("inspectTarball", () => {
     await expect(inspectTarball(invalid)).rejects.toThrow(
       "tarball contains an invalid header checksum",
     );
+  });
+
+  it.each([
+    [
+      "invalid numeric header",
+      (tar: Buffer, offset: number) => {
+        writeTarField(tar, offset, 100, 8, "not-octal");
+        refreshTarChecksum(tar, offset);
+      },
+      "invalid numeric header",
+    ],
+    [
+      "unsafe absolute path",
+      (tar: Buffer, offset: number) => {
+        writeTarField(tar, offset, 0, 100, "/unsafe.js");
+        refreshTarChecksum(tar, offset);
+      },
+      "unsafe entry path",
+    ],
+    [
+      "ambiguous parent path",
+      (tar: Buffer, offset: number) => {
+        writeTarField(tar, offset, 0, 100, "package/../unsafe.js");
+        refreshTarChecksum(tar, offset);
+      },
+      "ambiguous entry path",
+    ],
+    [
+      "unsupported link",
+      (tar: Buffer, offset: number) => {
+        writeTarField(tar, offset, 156, 1, "2");
+        refreshTarChecksum(tar, offset);
+      },
+      "unsupported entry type",
+    ],
+    [
+      "entry beyond archive",
+      (tar: Buffer, offset: number) => {
+        writeTarField(tar, offset, 124, 12, "77777777777");
+        refreshTarChecksum(tar, offset);
+      },
+      "entry extends beyond",
+    ],
+  ])("rejects a tarball with an %s", async (label, mutate, message) => {
+    const tar = gunzipSync(await readFile(goodTarball));
+    const offset = tarHeaderOffsets(tar)[0];
+    if (offset === undefined) {
+      throw new Error("expected a tar header");
+    }
+    mutate(tar, offset);
+    const invalid = join(fixtureRoot, `${label.replaceAll(" ", "-")}.tgz`);
+    await writeFile(invalid, gzipSync(tar));
+
+    await expect(inspectTarball(invalid)).rejects.toThrow(message);
+  });
+
+  it("rejects duplicate paths, a missing manifest, and invalid manifest JSON", async () => {
+    const original = gunzipSync(await readFile(goodTarball));
+    const offsets = tarHeaderOffsets(original);
+    const first = offsets[0];
+    const second = offsets[1];
+    const packageJson = offsets.find(
+      (offset) => tarEntryName(original, offset) === "package/package.json",
+    );
+    if (first === undefined || second === undefined || packageJson === undefined) {
+      throw new Error("expected fixture tar headers");
+    }
+
+    const duplicate = Buffer.from(original);
+    writeTarField(duplicate, second, 0, 100, tarEntryName(duplicate, first));
+    refreshTarChecksum(duplicate, second);
+    const duplicatePath = join(fixtureRoot, "duplicate-path.tgz");
+    await writeFile(duplicatePath, gzipSync(duplicate));
+    await expect(inspectTarball(duplicatePath)).rejects.toThrow("duplicate entry path");
+
+    const missing = Buffer.from(original);
+    writeTarField(missing, packageJson, 0, 100, "package/manifest.json");
+    refreshTarChecksum(missing, packageJson);
+    const missingPath = join(fixtureRoot, "missing-manifest.tgz");
+    await writeFile(missingPath, gzipSync(missing));
+    await expect(inspectTarball(missingPath)).rejects.toThrow(
+      "does not contain package/package.json",
+    );
+
+    const invalidJson = Buffer.from(original);
+    invalidJson[packageJson + 512] = 120;
+    const invalidJsonPath = join(fixtureRoot, "invalid-manifest-json.tgz");
+    await writeFile(invalidJsonPath, gzipSync(invalidJson));
+    await expect(inspectTarball(invalidJsonPath)).rejects.toThrow(
+      "package.json is not valid JSON",
+    );
+  });
+});
+
+describe("packDirectory", () => {
+  it("surfaces npm pack failures and cleans its temporary destination", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "package-contract-invalid-pack-test-"),
+    );
+    try {
+      await expect(packDirectory(directory)).rejects.toThrow("npm pack failed");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });
 
@@ -954,6 +1109,40 @@ describe("comparePackages", () => {
       inconclusiveReason: null,
       regressions: [{ code: "PC1001", subpath: "." }],
       unchanged: [],
+    });
+  });
+
+  it("classifies fixes and unchanged diagnostics by stable identity", async () => {
+    const options = {
+      profiles: [
+        {
+          moduleSystem: "esm" as const,
+          runtime: { version: process.version },
+        },
+      ],
+    };
+    const fixed = await comparePackages(
+      { kind: "tarball", path: comparisonAfterTarball },
+      { kind: "tarball", path: comparisonBeforeTarball },
+      options,
+    );
+    expect(fixed).toMatchObject({
+      conclusive: true,
+      fixes: [{ code: "PC1001" }],
+      regressions: [],
+      unchanged: [],
+    });
+
+    const unchanged = await comparePackages(
+      { kind: "tarball", path: comparisonAfterTarball },
+      { kind: "tarball", path: comparisonAfterTarball },
+      options,
+    );
+    expect(unchanged).toMatchObject({
+      conclusive: true,
+      fixes: [],
+      regressions: [],
+      unchanged: [{ before: { code: "PC1001" }, after: { code: "PC1001" } }],
     });
   });
 

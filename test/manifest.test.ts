@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePackageManifest } from "../src/core/manifest.js";
+import { declaredBinNames, parsePackageManifest } from "../src/core/manifest.js";
 
 describe("parsePackageManifest", () => {
   it("retains the package fields used for profile applicability", () => {
@@ -37,5 +37,31 @@ describe("parsePackageManifest", () => {
     { engines: Number.NaN, name: "example", version: "1.0.0" },
   ])("rejects malformed manifest data %#", (value) => {
     expect(() => parsePackageManifest(value)).toThrow();
+  });
+});
+
+describe("declaredBinNames", () => {
+  it("normalizes string and object bin declarations", () => {
+    expect([
+      ...declaredBinNames(
+        parsePackageManifest({
+          bin: "./cli.js",
+          name: "@scope/example",
+          version: "1.0.0",
+        }),
+      ),
+    ]).toEqual(["example"]);
+    expect([
+      ...declaredBinNames(
+        parsePackageManifest({
+          bin: { a: "./a.js", ignored: null, z: "./z.js" },
+          name: "example",
+          version: "1.0.0",
+        }),
+      ),
+    ]).toEqual(["a", "z"]);
+    expect([
+      ...declaredBinNames(parsePackageManifest({ name: "example", version: "1.0.0" })),
+    ]).toEqual([]);
   });
 });

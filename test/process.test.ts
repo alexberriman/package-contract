@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createSafeEnvironment } from "../src/core/environment.js";
 import { resolvePackageInput } from "../src/core/package-input.js";
 import { runProcess } from "../src/core/process.js";
+import { detectExecutableVersion } from "../src/core/runtime.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
 
 const cleanupPaths: string[] = [];
@@ -123,6 +124,30 @@ describe("runProcess", () => {
   });
 });
 
+describe("detectExecutableVersion", () => {
+  it("accepts Node.js version output and rejects invalid or failed commands", async () => {
+    await expect(
+      detectExecutableVersion(process.execPath, process.cwd()),
+    ).resolves.toBe(process.versions.node);
+    const root = await mkdtemp(join(tmpdir(), "package-contract-version-test-"));
+    cleanupPaths.push(root);
+    const invalid = join(root, "invalid-version");
+    const failed = join(root, "failed-version");
+    await Promise.all([
+      writeFile(invalid, "#!/usr/bin/env node\nprocess.stdout.write('latest\\n');\n"),
+      writeFile(failed, "#!/usr/bin/env node\nprocess.exitCode = 1;\n"),
+    ]);
+    await Promise.all([chmod(invalid, 0o700), chmod(failed, 0o700)]);
+
+    await expect(detectExecutableVersion(invalid, root)).rejects.toThrow(
+      "returned an invalid version",
+    );
+    await expect(detectExecutableVersion(failed, root)).rejects.toThrow(
+      "could not determine",
+    );
+  });
+});
+
 describe("temporary and package paths", () => {
   it("creates a private temporary directory and removes it", async () => {
     const temporary = await createTemporaryDirectory("package-contract-test-");
@@ -140,8 +165,10 @@ describe("temporary and package paths", () => {
     const root = await mkdtemp(join(tmpdir(), "package-contract-path-test-"));
     cleanupPaths.push(root);
     const file = join(root, "archive.tgz");
+    const wrongExtension = join(root, "archive.zip");
     const directory = join(root, "directory");
     await writeFile(file, "not a tarball");
+    await writeFile(wrongExtension, "not a tarball");
     await mkdir(directory);
 
     await expect(
@@ -153,6 +180,9 @@ describe("temporary and package paths", () => {
     await expect(
       resolvePackageInput({ kind: "tarball", path: join(root, "missing.zip") }),
     ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      resolvePackageInput({ kind: "tarball", path: wrongExtension }),
+    ).rejects.toThrow(".tgz extension");
     await expect(
       resolvePackageInput({ kind: "directory", path: "bad\u0000path" }),
     ).rejects.toThrow(TypeError);

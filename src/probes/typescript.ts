@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { InstalledConsumer } from "../core/consumer.js";
 import { createSafeEnvironment } from "../core/environment.js";
 import { compareCodeUnits } from "../core/order.js";
-import { runProcess } from "../core/process.js";
+import { type ProcessResult, runProcess } from "../core/process.js";
 import type { ConsumerProfile } from "../profiles/consumer.js";
 import type {
   ResolvedTypeScriptCompiler,
@@ -33,6 +33,10 @@ export interface TypeScriptProbeInput {
 
 export interface TypeScriptProbeOutput extends TypeScriptProbeInput {
   readonly result: TypeScriptProbeResult;
+}
+
+export interface PreparedTypeScriptProject extends TypeScriptProbeInput {
+  readonly id: string;
 }
 
 function packageSpecifier(packageName: string, subpath: string): string {
@@ -203,9 +207,18 @@ export async function runTypeScriptProbes(
     maxOutputBytes: 1024 * 1024,
     timeoutMs: 60_000,
   });
-  if (result.timedOut || result.truncated) {
+  return interpretTypeScriptWorkerResult(result, projects, compiler, consumer.path);
+}
+
+export function interpretTypeScriptWorkerResult(
+  processResult: ProcessResult,
+  projects: readonly PreparedTypeScriptProject[],
+  compiler: ResolvedTypeScriptCompiler,
+  consumerPath: string,
+): readonly TypeScriptProbeOutput[] {
+  if (processResult.timedOut || processResult.truncated) {
     const unavailable = Object.freeze({
-      message: result.timedOut
+      message: processResult.timedOut
         ? "TypeScript exceeded the time limit."
         : "TypeScript exceeded the output limit.",
       status: "resource-limit",
@@ -218,7 +231,7 @@ export async function runTypeScriptProbes(
       })),
     );
   }
-  if (result.exitCode !== 0) {
+  if (processResult.exitCode !== 0) {
     const unavailable = Object.freeze({
       message: "TypeScript could not evaluate the generated consumer project.",
       status: "unavailable",
@@ -234,7 +247,7 @@ export async function runTypeScriptProbes(
 
   let response: TypeScriptWorkerResponse;
   try {
-    response = JSON.parse(result.stdout) as TypeScriptWorkerResponse;
+    response = JSON.parse(processResult.stdout) as TypeScriptWorkerResponse;
   } catch {
     const unavailable = Object.freeze({
       message: "TypeScript returned an invalid structured response.",
@@ -278,7 +291,7 @@ export async function runTypeScriptProbes(
           : Object.freeze({
               diagnostics: normalizeDiagnostics(
                 project.diagnostics,
-                consumer.path,
+                consumerPath,
                 compiler.packagePath,
               ),
               status: "completed",
