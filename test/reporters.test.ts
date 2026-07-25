@@ -5,6 +5,7 @@ import {
   renderGitHubReport,
   renderHumanComparison,
   renderHumanReport,
+  serializeJson,
   serializeJsonReport,
 } from "../src/index.js";
 
@@ -200,5 +201,36 @@ describe("reporters", () => {
     expect(first).toBe(second);
     expect(first.endsWith("\n")).toBe(true);
     expect(first.indexOf('"diagnostics"')).toBeLessThan(first.indexOf('"environment"'));
+  });
+
+  it("canonicalizes generated object insertion orders recursively", () => {
+    const entries = [
+      ["z", { beta: 2, alpha: 1 }],
+      ["a", [{ delta: 4, charlie: 3 }]],
+      ["m", true],
+    ] as const;
+
+    for (const order of [
+      entries,
+      [...entries].reverse(),
+      [entries[1], entries[2], entries[0]],
+    ]) {
+      expect(serializeJson(Object.fromEntries(order))).toMatchInlineSnapshot(`
+        "{
+          "a": [
+            {
+              "charlie": 3,
+              "delta": 4
+            }
+          ],
+          "m": true,
+          "z": {
+            "alpha": 1,
+            "beta": 2
+          }
+        }
+        "
+      `);
+    }
   });
 });

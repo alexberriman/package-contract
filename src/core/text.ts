@@ -43,7 +43,7 @@ function truncateUtf8(value: string, limitBytes: number): string {
   const suffix = "\n<truncated>";
   const suffixBytes = Buffer.byteLength(suffix);
   if (limitBytes <= suffixBytes) {
-    return suffix.slice(0, limitBytes);
+    return "<truncated>".slice(0, limitBytes);
   }
   const contentLimit = Math.max(0, limitBytes - suffixBytes);
   let truncated = buffer.subarray(0, contentLimit).toString("utf8");
@@ -52,7 +52,7 @@ function truncateUtf8(value: string, limitBytes: number): string {
     truncated = truncated.slice(0, -1);
   }
 
-  return `${truncated}${suffix}`;
+  return truncated.length === 0 ? "<truncated>" : `${truncated}${suffix}`;
 }
 
 export function normalizeText(
