@@ -464,6 +464,29 @@ const cases: readonly CorpusCase[] = [
   },
 ];
 
+function corpusShard(): {
+  readonly index: number;
+  readonly total: number;
+} {
+  const index = Number.parseInt(process.env.PACKAGE_CONTRACT_CORPUS_SHARD ?? "1", 10);
+  const total = Number.parseInt(process.env.PACKAGE_CONTRACT_CORPUS_SHARDS ?? "1", 10);
+  if (
+    !Number.isSafeInteger(index) ||
+    !Number.isSafeInteger(total) ||
+    total < 1 ||
+    index < 1 ||
+    index > total
+  ) {
+    throw new Error("invalid package corpus shard configuration");
+  }
+  return { index, total };
+}
+
+const shard = corpusShard();
+const selectedCases = cases.filter(
+  (_fixture, index) => index % shard.total === shard.index - 1,
+);
+
 let root = "";
 
 async function packFixture(fixture: CorpusCase): Promise<string> {
@@ -503,7 +526,7 @@ describe("fixture corpus", () => {
     );
   });
 
-  it.each(cases)("$id", async (fixture) => {
+  it.each(selectedCases)("$id", async (fixture) => {
     const tarball = await packFixture(fixture);
     const report = await testPackage(
       { kind: "tarball", path: tarball },

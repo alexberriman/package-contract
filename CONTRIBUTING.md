@@ -37,6 +37,13 @@ Biome owns formatting and linting. Run `npm run format` before committing.
 Tests use Vitest and should not depend on a developer's global npm
 configuration, credentials, cache, or workspace layout.
 
+CI runs the package fixture corpus in two deterministic shards. To reproduce a
+shard locally:
+
+```sh
+PACKAGE_CONTRACT_CORPUS_SHARD=1 PACKAGE_CONTRACT_CORPUS_SHARDS=2 npm run test:corpus
+```
+
 ## Fixture standard
 
 Every new diagnostic or suppression rule needs:
