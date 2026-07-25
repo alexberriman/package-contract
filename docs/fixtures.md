@@ -5,9 +5,9 @@ minimal package, packs it with npm, runs the exact tarball through Publint
 0.3.22 and Are the Types Wrong 0.18.5, installs it into an isolated consumer,
 and asserts its final classification.
 
-The corpus currently contains 30 focused packages:
+The corpus currently contains 33 focused packages:
 
-- 20 empirically residual consumer failures;
+- 23 empirically residual consumer failures;
 - 7 clean counter-fixtures, including one static-only incumbent warning;
 - 2 failures causally explained by an incumbent;
 - 1 explicitly inapplicable type profile.
@@ -36,6 +36,9 @@ The corpus currently contains 30 focused packages:
 | `r18-undeclared-type-dependency` | Declaration imports an undeclared package |
 | `r19-omitted-relative-declaration` | Declaration imports an omitted relative file |
 | `r20-subpath-type-dependency` | Subpath declaration imports an undeclared package |
+| `r21-node-condition-asset` | Node export condition evaluates code that reads an omitted asset |
+| `r22-platform-specific-evaluation` | Entrypoint fails on the executing host platform |
+| `r23-pattern-subpath-asset` | Expanded wildcard subpath reads an omitted asset |
 
 ## Counter-fixtures and suppression
 
@@ -46,6 +49,12 @@ that an incumbent warning alone does not manufacture an execution diagnostic.
 The explained cases cover a missing runtime export target and requiring ESM
 with top-level await. The untyped package confirms that a requested TypeScript
 profile is `not-evaluated` when the package claims no declarations.
+
+CI also runs the original runtime-floor fixture with a real Node 18.20.8
+executable while package-contract itself runs on Node 24. The same packed
+module fails on its claimed Node 18 floor and passes on the supported runner.
+Workspace coverage separately verifies an explicit package directory nested
+inside an npm workspace and a deterministic `workspace:` installation failure.
 
 ## Adding a fixture
 

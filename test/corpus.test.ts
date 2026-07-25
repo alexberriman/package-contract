@@ -325,6 +325,51 @@ const cases: readonly CorpusCase[] = [
     },
     profile: { ...esmTypes, subpaths: ["./feature"] },
   },
+  esmRuntimeCase("r21-node-condition-asset", "export const value = 42;\n", {
+    files: {
+      "node.js":
+        "import { readFileSync } from 'node:fs';\nexport const value = readFileSync(new URL('./missing.txt', import.meta.url));\n",
+    },
+    manifest: {
+      exports: {
+        ".": {
+          types: "./index.d.ts",
+          node: {
+            import: "./node.js",
+          },
+          default: "./index.js",
+        },
+      },
+      files: ["index.js", "index.d.ts", "node.js"],
+    },
+  }),
+  esmRuntimeCase(
+    "r22-platform-specific-evaluation",
+    `if (process.platform === ${JSON.stringify(process.platform)}) throw new Error('unsupported platform');\nexport const value = 42;\n`,
+  ),
+  esmRuntimeCase("r23-pattern-subpath-asset", "export const value = 42;\n", {
+    actions: [
+      {
+        exportName: "feature",
+        kind: "export",
+        subpath: "./features/a",
+      },
+    ],
+    files: {
+      "features/a.js":
+        "import { readFileSync } from 'node:fs';\nexport const feature = readFileSync(new URL('./missing.txt', import.meta.url));\n",
+    },
+    manifest: {
+      exports: {
+        ".": {
+          types: "./index.d.ts",
+          import: "./index.js",
+        },
+        "./features/*": "./features/*.js",
+      },
+      files: ["index.js", "index.d.ts", "features"],
+    },
+  }),
   {
     expected: { class: "clean" },
     files: {
@@ -520,10 +565,10 @@ afterAll(async () => {
 
 describe("fixture corpus", () => {
   it("contains at least thirty focused cases and twenty residual failures", () => {
-    expect(cases).toHaveLength(30);
-    expect(cases.filter(({ expected }) => expected.class === "residual")).toHaveLength(
-      20,
-    );
+    expect(cases.length).toBeGreaterThanOrEqual(30);
+    expect(
+      cases.filter(({ expected }) => expected.class === "residual").length,
+    ).toBeGreaterThanOrEqual(20);
   });
 
   it.each(selectedCases)("$id", async (fixture) => {

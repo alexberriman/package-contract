@@ -1036,6 +1036,57 @@ describe("testPackage", () => {
     expect(report.package.name).toBe("package-contract-good-fixture");
   });
 
+  it("packs an explicit package directory nested inside a workspace", async () => {
+    const workspace = join(fixtureRoot, "workspace-fixture");
+    const packageDirectory = join(workspace, "packages", "library");
+    await mkdir(packageDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "package-contract-workspace-root",
+            private: true,
+            workspaces: ["packages/*"],
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+      writeFile(
+        join(packageDirectory, "package.json"),
+        `${JSON.stringify(
+          {
+            exports: "./index.js",
+            files: ["index.js"],
+            name: "package-contract-workspace-library",
+            type: "module",
+            version: "1.0.0",
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+      writeFile(join(packageDirectory, "index.js"), "export const value = 42;\n"),
+    ]);
+
+    const report = await testPackage(
+      { kind: "directory", path: packageDirectory },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.package.name).toBe("package-contract-workspace-library");
+    expect(report.diagnostics).toEqual([]);
+    expect(report.results).toEqual([expect.objectContaining({ state: "pass" })]);
+  });
+
   it("reports an isolated offline cache miss as not evaluated", async () => {
     const report = await testPackage(
       { kind: "tarball", path: dependencyTarball },
