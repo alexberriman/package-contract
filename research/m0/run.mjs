@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,7 +77,8 @@ const fixtures = [
       devDependencies: { "is-number": "7.0.0" },
     },
     files: {
-      "index.js": "import isNumber from 'is-number';\nexport const value = isNumber(42);\n",
+      "index.js":
+        "import isNumber from 'is-number';\nexport const value = isNumber(42);\n",
       "index.d.ts": "export declare const value: boolean;\n",
     },
   },
@@ -212,13 +213,7 @@ try {
 
     const pack = run(
       "npm",
-      [
-        "pack",
-        "--ignore-scripts",
-        "--json",
-        "--pack-destination",
-        packRoot,
-      ],
+      ["pack", "--ignore-scripts", "--json", "--pack-destination", packRoot],
       fixtureRoot,
     );
     if (pack.exitCode !== 0) {

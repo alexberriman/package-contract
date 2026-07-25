@@ -1,0 +1,2 @@
+export const DEFAULT_EVIDENCE_LIMIT_BYTES = 8_192;
+export const DIAGNOSTIC_ID_HEX_LENGTH = 16;
