@@ -24,6 +24,7 @@ let typeFailureTarball = "";
 let dualTarball = "";
 let patternTarball = "";
 let untypedTarball = "";
+let explainedTarball = "";
 
 async function makeFixture(
   name: string,
@@ -146,6 +147,20 @@ beforeAll(async () => {
     {
       exports: { ".": { import: "./index.js" } },
       files: ["index.js"],
+    },
+  );
+  explainedTarball = await makeFixture(
+    "package-contract-explained-fixture",
+    "export const value = 42;\n",
+    {},
+    {},
+    {
+      exports: {
+        ".": {
+          types: "./index.d.ts",
+          import: "./missing.js",
+        },
+      },
     },
   );
 });
@@ -334,6 +349,37 @@ describe("testPackage", () => {
     });
     expect(first.diagnostics[0]?.evidence).toContain("<consumer>");
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+
+  it("hides causally explained failures unless explicitly included", async () => {
+    const profile = {
+      moduleSystem: "esm" as const,
+      runtime: { version: process.version },
+    };
+    const hidden = await testPackage(
+      { kind: "tarball", path: explainedTarball },
+      { profiles: [profile] },
+    );
+    const included = await testPackage(
+      { kind: "tarball", path: explainedTarball },
+      { includeExplained: true, profiles: [profile] },
+    );
+
+    expect(hidden.diagnostics).toEqual([]);
+    expect(hidden.results[0]).toMatchObject({
+      diagnostics: [
+        {
+          code: "PC1001",
+          explainedBy: ["publint:FILE_DOES_NOT_EXIST"],
+        },
+      ],
+      state: "fail",
+    });
+    expect(included.diagnostics).toHaveLength(1);
+    expect(included.tools).toEqual({
+      attw: "0.18.5",
+      publint: "0.3.22",
+    });
   });
 
   it("packs and tests a package directory", async () => {

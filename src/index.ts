@@ -25,6 +25,10 @@ export {
   type TestPackageOptions,
   testPackage,
 } from "./core/test-package.js";
+export type {
+  IncumbentFinding,
+  IncumbentTool,
+} from "./integrations/types.js";
 export {
   type ConsumerProfile,
   type ConsumerProfileInput,

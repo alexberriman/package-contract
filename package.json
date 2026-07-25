@@ -29,7 +29,7 @@
   "sideEffects": false,
   "files": [
     "dist",
-    "docs/diagnostics",
+    "docs",
     "LICENSE",
     "README.md",
     "SECURITY.md"
@@ -79,5 +79,10 @@
     "typescript-5-6": "npm:typescript@5.6.3",
     "typescript-6": "npm:typescript@6.0.3",
     "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "@arethetypeswrong/core": "0.18.5",
+    "@publint/pack": "0.1.6",
+    "publint": "0.3.22"
   }
 }

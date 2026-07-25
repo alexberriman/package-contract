@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { analyzeWithIncumbents } from "../integrations/incumbents.js";
+import { applyIncumbentExplanations } from "../integrations/suppression.js";
 import { formatTypeScriptEvidence, runTypeScriptProbe } from "../probes/typescript.js";
 import type { ResolvedTypeScriptCompiler } from "../probes/typescript-contract.js";
 import { resolveTypeScriptCompiler } from "../probes/typescript-resolver.js";
@@ -38,6 +40,7 @@ import { inspectTarball } from "./tarball.js";
 
 export interface TestPackageOptions {
   readonly concurrency?: number;
+  readonly includeExplained?: boolean;
   readonly invokingDirectory?: string;
   readonly offline?: boolean;
   readonly profiles?: readonly ConsumerProfileInput[];
@@ -392,6 +395,7 @@ export async function testPackage(
     if ((await hashFile(artifact.path)) !== artifact.sha256) {
       throw new Error("package tarball changed after packing");
     }
+    const incumbents = await analyzeWithIncumbents(artifact.path);
     const consumer = await installConsumer(artifact, {
       runtimeExecutable,
       ...(options.offline === undefined ? {} : { offline: options.offline }),
@@ -461,10 +465,18 @@ export async function testPackage(
         );
       }
 
-      const sortedResults = sortResults(results);
+      const sortedResults = sortResults(
+        results.map((result) =>
+          applyIncumbentExplanations(result, incumbents.findings),
+        ),
+      );
       const diagnostics = Object.freeze(
         sortedResults
           .flatMap((result) => (result.state === "fail" ? [...result.diagnostics] : []))
+          .filter(
+            (diagnostic) =>
+              options.includeExplained === true || diagnostic.explainedBy === null,
+          )
           .sort(compareDiagnostics),
       );
       return Object.freeze({
@@ -477,6 +489,7 @@ export async function testPackage(
           profileSchema: 1,
           typescript: compiler?.version ?? null,
         }),
+        incumbentFindings: incumbents.findings,
         lockfileSha256: lockfileDigest(consumer.lockfile, artifact.name),
         package: Object.freeze({
           files: artifact.files,
@@ -485,6 +498,7 @@ export async function testPackage(
           version: artifact.version,
         }),
         results: sortedResults,
+        tools: incumbents.tools,
       });
     } finally {
       await consumer.cleanup();
