@@ -15,6 +15,10 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
+export function serializeJson(value: unknown): string {
+  return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
+}
+
 export function serializeJsonReport(report: PackageReport): string {
-  return `${JSON.stringify(canonicalize(report), null, 2)}\n`;
+  return serializeJson(report);
 }

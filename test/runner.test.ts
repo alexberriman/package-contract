@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runRootEsmConsumer } from "../src/core/consumer.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
-import { defineConsumer, testPackage } from "../src/index.js";
+import { comparePackages, defineConsumer, testPackage } from "../src/index.js";
 import {
   formatTypeScriptEvidence,
   runTypeScriptProbe,
@@ -25,6 +25,9 @@ let dualTarball = "";
 let patternTarball = "";
 let untypedTarball = "";
 let explainedTarball = "";
+let comparisonBeforeTarball = "";
+let comparisonAfterTarball = "";
+let comparisonDriftTarball = "";
 
 async function makeFixture(
   name: string,
@@ -162,6 +165,27 @@ beforeAll(async () => {
         },
       },
     },
+  );
+  comparisonBeforeTarball = await makeFixture(
+    "package-contract-compare-before",
+    "export const value = 42;\n",
+    {},
+    {},
+    { name: "package-contract-compare-fixture" },
+  );
+  comparisonAfterTarball = await makeFixture(
+    "package-contract-compare-after",
+    "import { readFileSync } from 'node:fs';\nreadFileSync(new URL('./missing.txt', import.meta.url));\nexport const value = 42;\n",
+    {},
+    {},
+    { name: "package-contract-compare-fixture" },
+  );
+  comparisonDriftTarball = await makeFixture(
+    "package-contract-compare-drift",
+    "export const value = 42;\n",
+    {},
+    { "is-number": "7.0.0" },
+    { name: "package-contract-compare-fixture" },
   );
 });
 
@@ -539,5 +563,51 @@ describe("testPackage", () => {
     } finally {
       await Promise.all([artifact.cleanup(), cache.cleanup()]);
     }
+  });
+});
+
+describe("comparePackages", () => {
+  it("classifies a controlled runtime regression under one dependency graph", async () => {
+    const comparison = await comparePackages(
+      { kind: "tarball", path: comparisonBeforeTarball },
+      { kind: "tarball", path: comparisonAfterTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(comparison).toMatchObject({
+      conclusive: true,
+      fixes: [],
+      inconclusiveReason: null,
+      regressions: [{ code: "PC1001", subpath: "." }],
+      unchanged: [],
+    });
+  });
+
+  it("marks changed transitive installation state as inconclusive", async () => {
+    const comparison = await comparePackages(
+      { kind: "tarball", path: comparisonBeforeTarball },
+      { kind: "tarball", path: comparisonDriftTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(comparison).toMatchObject({
+      conclusive: false,
+      inconclusiveReason: "dependency-graph-drift",
+      regressions: [],
+    });
   });
 });

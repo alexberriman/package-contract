@@ -42,6 +42,7 @@ export interface TestPackageOptions {
   readonly concurrency?: number;
   readonly includeExplained?: boolean;
   readonly invokingDirectory?: string;
+  readonly npmCachePath?: string;
   readonly offline?: boolean;
   readonly profiles?: readonly ConsumerProfileInput[];
   readonly runtimeExecutable?: string;
@@ -78,8 +79,21 @@ function lockfileDigest(lockfile: string | null, packageName: string): string | 
     root.dependencies[packageName] = "file:<tarball>";
   }
   const installed = parsed.packages?.[`node_modules/${packageName}`];
-  if (installed?.resolved !== undefined) {
-    installed.resolved = "file:<tarball>";
+  if (installed !== undefined) {
+    if (installed.resolved !== undefined) {
+      installed.resolved = "file:<tarball>";
+    }
+    const normalized = installed as {
+      integrity?: string;
+      resolved?: string;
+      version?: string;
+    };
+    if (normalized.integrity !== undefined) {
+      normalized.integrity = "<tarball-integrity>";
+    }
+    if (normalized.version !== undefined) {
+      normalized.version = "<package-version>";
+    }
   }
   const legacy = parsed.dependencies?.[packageName];
   if (legacy?.resolved !== undefined) {
@@ -397,6 +411,9 @@ export async function testPackage(
     }
     const incumbents = await analyzeWithIncumbents(artifact.path);
     const consumer = await installConsumer(artifact, {
+      ...(options.npmCachePath === undefined
+        ? {}
+        : { cachePath: options.npmCachePath }),
       runtimeExecutable,
       ...(options.offline === undefined ? {} : { offline: options.offline }),
     });

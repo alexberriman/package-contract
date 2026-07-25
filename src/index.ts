@@ -1,4 +1,10 @@
 export {
+  type ComparePackagesOptions,
+  type ComparisonReport,
+  comparePackages,
+  type UnchangedDiagnostic,
+} from "./core/compare-packages.js";
+export {
   type ConsumerProfileId,
   type CreateDiagnosticOptions,
   compareDiagnostics,
@@ -35,6 +41,10 @@ export {
   defineConsumer,
   type RuntimeInput,
 } from "./profiles/consumer.js";
+export { renderHumanComparison } from "./reporters/comparison.js";
 export { renderGitHubReport } from "./reporters/github.js";
 export { renderHumanReport } from "./reporters/human.js";
-export { serializeJsonReport } from "./reporters/json.js";
+export {
+  serializeJson,
+  serializeJsonReport,
+} from "./reporters/json.js";

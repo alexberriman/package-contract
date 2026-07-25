@@ -3,6 +3,7 @@ import { createDiagnostic } from "../src/core/diagnostic.js";
 import type { PackageReport } from "../src/core/report.js";
 import {
   renderGitHubReport,
+  renderHumanComparison,
   renderHumanReport,
   serializeJsonReport,
 } from "../src/index.js";
@@ -28,6 +29,7 @@ function report(withDiagnostic = true): PackageReport {
     subpath: ".",
     title: "Package evaluation failed",
   });
+
   return {
     diagnostics: withDiagnostic ? [diagnostic] : [],
     environment: {
@@ -55,6 +57,27 @@ function report(withDiagnostic = true): PackageReport {
 }
 
 describe("reporters", () => {
+  it("renders comparison regressions and inconclusive state", () => {
+    const base = report();
+    const diagnostic = base.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a diagnostic");
+    }
+    expect(
+      renderHumanComparison({
+        after: base.package,
+        before: base.package,
+        conclusive: false,
+        fixes: [],
+        inconclusiveReason: "dependency-graph-drift",
+        regressions: [diagnostic],
+        unchanged: [],
+      }),
+    ).toContain(
+      "Comparison inconclusive: dependency graph drift.\n\nREGRESSION PC1001",
+    );
+  });
+
   it("is quiet for healthy human and GitHub reports", () => {
     expect(renderHumanReport(report(false))).toBe("");
     expect(renderGitHubReport(report(false))).toBe("");

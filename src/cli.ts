@@ -3,11 +3,13 @@
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { comparePackages } from "./core/compare-packages.js";
 import type { PackageInput } from "./core/input.js";
 import { testPackage } from "./core/test-package.js";
+import { renderHumanComparison } from "./reporters/comparison.js";
 import { renderGitHubReport } from "./reporters/github.js";
 import { renderHumanReport } from "./reporters/human.js";
-import { serializeJsonReport } from "./reporters/json.js";
+import { serializeJson, serializeJsonReport } from "./reporters/json.js";
 
 const HELP = `package-contract
 
@@ -17,6 +19,7 @@ Usage:
   package-contract check [directory-or-tarball]
   package-contract check [path] --json
   package-contract check [path] --reporter github
+  package-contract compare <before> <after> [--json]
   package-contract --help
   package-contract --version
 
@@ -74,11 +77,45 @@ async function main(): Promise<void> {
     process.stdout.write(HELP);
     return;
   }
+  const reporter = parseReporter(values.json, values.reporter);
+  if (positionals[0] === "compare") {
+    if (positionals.length !== 3) {
+      throw new Error("expected `package-contract compare <before> <after>`");
+    }
+    const beforePath = positionals[1];
+    const afterPath = positionals[2];
+    if (beforePath === undefined || afterPath === undefined) {
+      throw new Error("comparison paths are required");
+    }
+    if (reporter === "github") {
+      throw new Error("the github reporter is not available for comparisons");
+    }
+    const comparison = await comparePackages(
+      await packageInput(beforePath),
+      await packageInput(afterPath),
+      {
+        includeExplained: values["include-explained"] === true,
+        offline: values.offline === true,
+      },
+    );
+    process.stdout.write(
+      reporter === "json"
+        ? serializeJson(comparison)
+        : renderHumanComparison(comparison),
+    );
+    if (!comparison.conclusive) {
+      process.exitCode = 2;
+    } else if (comparison.regressions.some(({ severity }) => severity === "error")) {
+      process.exitCode = 1;
+    }
+    return;
+  }
   if (positionals[0] !== "check" || positionals.length > 2) {
-    throw new Error("expected `package-contract check [directory-or-tarball]`");
+    throw new Error(
+      "expected `package-contract check [directory-or-tarball]` or `package-contract compare <before> <after>`",
+    );
   }
 
-  const reporter = parseReporter(values.json, values.reporter);
   const input = await packageInput(positionals[1] ?? ".");
   const report = await testPackage(input, {
     includeExplained: values["include-explained"] === true,
