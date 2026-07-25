@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const releaseDirectory = await realpath(join(root, "release"));
@@ -16,7 +16,13 @@ if (
   throw new Error("release manifest is invalid");
 }
 const tarball = await realpath(join(releaseDirectory, manifest.filename));
-if (!tarball.startsWith(`${releaseDirectory}/`)) {
+const relativeTarball = relative(releaseDirectory, tarball);
+if (
+  relativeTarball === "" ||
+  relativeTarball === ".." ||
+  relativeTarball.startsWith(`..${sep}`) ||
+  isAbsolute(relativeTarball)
+) {
   throw new Error("release tarball escaped its directory");
 }
 const bytes = await readFile(tarball);
