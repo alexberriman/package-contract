@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runRootEsmConsumer } from "../src/core/consumer.js";
 import { inspectTarball } from "../src/core/tarball.js";
+import { createTemporaryDirectory } from "../src/core/temporary.js";
 import { testPackage } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
@@ -158,5 +160,38 @@ describe("testPackage", () => {
       reason: { code: "offline-cache-miss" },
       state: "not-evaluated",
     });
+  });
+
+  it("replays an installed dependency graph from its lockfile and warm cache", async () => {
+    const artifact = await inspectTarball(dependencyTarball);
+    const cache = await createTemporaryDirectory("package-contract-cache-test-");
+    try {
+      const first = await runRootEsmConsumer(artifact, { cachePath: cache.path });
+      try {
+        expect(first.install.exitCode).toBe(0);
+        expect(first.probe?.exitCode).toBe(0);
+        expect(first.lockfile).not.toBeNull();
+        if (first.lockfile === null) {
+          throw new Error("expected npm to create a lockfile");
+        }
+
+        const replay = await runRootEsmConsumer(artifact, {
+          cachePath: cache.path,
+          lockfile: first.lockfile,
+          offline: true,
+        });
+        try {
+          expect(replay.install.exitCode).toBe(0);
+          expect(replay.probe?.exitCode).toBe(0);
+          expect(replay.lockfile).toBe(first.lockfile);
+        } finally {
+          await replay.cleanup();
+        }
+      } finally {
+        await first.cleanup();
+      }
+    } finally {
+      await Promise.all([artifact.cleanup(), cache.cleanup()]);
+    }
   });
 });

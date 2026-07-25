@@ -35,5 +35,5 @@
 - Tar inspection now validates checksums, rejects ambiguous paths, duplicates,
   links, and extended headers, and uses bounded asynchronous decompression.
 - Report lockfile hashes canonicalize the private tarball reference. A complete
-  warm-cache lock replay is still required before the M1 repeatability item can
-  be considered closed.
+  warm-cache replay now runs `npm ci --offline` with the exact captured lockfile
+  and dependency cache.
