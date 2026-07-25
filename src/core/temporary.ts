@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 export interface TemporaryDirectory {
   readonly cleanup: () => Promise<void>;
@@ -18,8 +18,13 @@ export async function createTemporaryDirectory(
   await chmod(created, 0o700);
   const canonical = await realpath(created);
   const parent = await realpath(tmpdir());
-  const expectedPrefix = `${parent}/`;
-  if (!canonical.startsWith(expectedPrefix) || canonical === parent) {
+  const relativePath = relative(parent, canonical);
+  if (
+    relativePath === "" ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
     throw new Error("temporary directory escaped the operating system temp root");
   }
 

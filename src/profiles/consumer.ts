@@ -1,4 +1,5 @@
 import type { ConsumerProfileId } from "../core/diagnostic.js";
+import { compareCodeUnits } from "../core/order.js";
 
 export interface RuntimeInput {
   readonly executable?: string;
@@ -26,16 +27,23 @@ const RUNTIME_VERSION = /^(?:v)?\d+(?:\.\d+){0,2}$/;
 function normalizeSubpaths(subpaths: readonly string[]): readonly string[] {
   const unique = new Set<string>();
   for (const subpath of subpaths) {
-    if (subpath !== "." && !subpath.startsWith("./")) {
+    if (
+      subpath !== "." &&
+      (!subpath.startsWith("./") ||
+        subpath
+          .slice(2)
+          .split("/")
+          .some((segment) => segment === "" || segment === "." || segment === ".."))
+    ) {
       throw new TypeError('consumer subpaths must be "." or begin with "./"');
     }
     // biome-ignore lint/suspicious/noControlCharactersInRegex: Consumer input is validated against control bytes.
-    if (/[\u0000-\u001F\u007F]/.test(subpath)) {
+    if (/[\u0000-\u001F\u007F]/.test(subpath) || subpath.includes("\\")) {
       throw new TypeError("consumer subpaths must not contain control characters");
     }
     unique.add(subpath);
   }
-  return Object.freeze([...unique].sort());
+  return Object.freeze([...unique].sort(compareCodeUnits));
 }
 
 export function defineConsumer(input: ConsumerProfileInput): ConsumerProfile {

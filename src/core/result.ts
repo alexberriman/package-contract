@@ -7,6 +7,7 @@ export interface NotEvaluatedReason {
     | "compiler-unavailable"
     | "inapplicable-profile"
     | "offline-cache-miss"
+    | "resource-limit"
     | "runtime-unavailable"
     | "unsupported-export-pattern";
   readonly message: string;

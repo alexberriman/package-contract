@@ -57,7 +57,7 @@ export function runProcess(options: RunProcessOptions): Promise<ProcessResult> {
       windowsHide: true,
     });
     const output = { stderr: [] as Buffer[], stdout: [] as Buffer[] };
-    let outputBytes = 0;
+    const outputBytes = { stderr: 0, stdout: 0 };
     let settled = false;
     let timedOut = false;
     let truncated = false;
@@ -77,7 +77,7 @@ export function runProcess(options: RunProcessOptions): Promise<ProcessResult> {
         if (truncated) {
           return;
         }
-        const remaining = maxOutputBytes - outputBytes;
+        const remaining = maxOutputBytes - outputBytes[stream];
         if (remaining <= 0) {
           truncated = true;
           terminateProcessTree(child);
@@ -85,8 +85,8 @@ export function runProcess(options: RunProcessOptions): Promise<ProcessResult> {
         }
         const accepted = chunk.subarray(0, remaining);
         output[stream].push(accepted);
-        outputBytes += accepted.byteLength;
-        if (accepted.byteLength < chunk.byteLength || outputBytes >= maxOutputBytes) {
+        outputBytes[stream] += accepted.byteLength;
+        if (accepted.byteLength < chunk.byteLength) {
           truncated = true;
           terminateProcessTree(child);
         }

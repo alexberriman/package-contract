@@ -26,3 +26,14 @@
 - M1 begins with global coverage gates of 85% statements and lines, 80%
   branches, and 95% functions while subprocess error paths are still being
   built. The v1 release gate remains 95% for every metric.
+- The first adversarial review caught an npm command that had added development
+  transitive packages to `dependencies`. They were removed before any release,
+  the lockfile was regenerated, and tarball checks now assert there are no
+  unintended production dependencies.
+- Caller tarballs are copied from one read into a mode-0600 private artifact
+  before inspection and installation. This closes the replace-after-check gap.
+- Tar inspection now validates checksums, rejects ambiguous paths, duplicates,
+  links, and extended headers, and uses bounded asynchronous decompression.
+- Report lockfile hashes canonicalize the private tarball reference. A complete
+  warm-cache lock replay is still required before the M1 repeatability item can
+  be considered closed.

@@ -65,6 +65,22 @@ describe("runProcess", () => {
     expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(32);
   });
 
+  it("accepts output exactly at each stream limit", async () => {
+    const result = await runProcess({
+      args: ["-e", "process.stdout.write('1234'); process.stderr.write('5678')"],
+      cwd: process.cwd(),
+      executable: process.execPath,
+      maxOutputBytes: 4,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      stderr: "5678",
+      stdout: "1234",
+      truncated: false,
+    });
+  });
+
   it("terminates a timed-out process", async () => {
     const result = await runProcess({
       args: ["-e", "setInterval(()=>{},1000)"],

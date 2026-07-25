@@ -3,6 +3,7 @@ import { runRootEsmConsumer } from "./consumer.js";
 import { createDiagnostic } from "./diagnostic.js";
 import { hashFile } from "./hash.js";
 import type { PackageInput } from "./input.js";
+import { compareCodeUnits } from "./order.js";
 import { type PackArtifact, packDirectory } from "./pack.js";
 import { resolvePackageInput } from "./package-input.js";
 import type { PackageReport } from "./report.js";
@@ -19,8 +20,46 @@ async function tarballArtifact(path: string): Promise<PackArtifact> {
   return inspectTarball(path);
 }
 
-function lockfileDigest(lockfile: string | null): string | null {
-  return lockfile === null ? null : createHash("sha256").update(lockfile).digest("hex");
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalJson);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => compareCodeUnits(left, right))
+        .map(([key, child]) => [key, canonicalJson(child)]),
+    );
+  }
+  return value;
+}
+
+function lockfileDigest(lockfile: string | null, packageName: string): string | null {
+  if (lockfile === null) {
+    return null;
+  }
+  const parsed = JSON.parse(lockfile) as {
+    dependencies?: Record<string, { resolved?: string }>;
+    packages?: Record<
+      string,
+      { dependencies?: Record<string, string>; resolved?: string }
+    >;
+  };
+  const root = parsed.packages?.[""];
+  if (root?.dependencies?.[packageName] !== undefined) {
+    root.dependencies[packageName] = "file:<tarball>";
+  }
+  const installed = parsed.packages?.[`node_modules/${packageName}`];
+  if (installed?.resolved !== undefined) {
+    installed.resolved = "file:<tarball>";
+  }
+  const legacy = parsed.dependencies?.[packageName];
+  if (legacy?.resolved !== undefined) {
+    legacy.resolved = "file:<tarball>";
+  }
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalJson(parsed)))
+    .digest("hex");
 }
 
 export async function testPackage(
@@ -46,7 +85,18 @@ export async function testPackage(
     const consumer = await runRootEsmConsumer(artifact, options);
     try {
       let result: ProbeResult;
-      if (consumer.install.exitCode !== 0) {
+      if (consumer.install.timedOut || consumer.install.truncated) {
+        result = {
+          diagnostics: [],
+          reason: {
+            code: "resource-limit",
+            message: consumer.install.timedOut
+              ? "Consumer installation exceeded the time limit."
+              : "Consumer installation exceeded the output limit.",
+          },
+          state: "not-evaluated",
+        };
+      } else if (consumer.install.exitCode !== 0) {
         const isOfflineMiss =
           options.offline === true &&
           /ENOTCACHED|cache miss|offline mode/i.test(
@@ -89,6 +139,17 @@ export async function testPackage(
               ],
               state: "fail",
             };
+      } else if (consumer.probe?.timedOut || consumer.probe?.truncated) {
+        result = {
+          diagnostics: [],
+          reason: {
+            code: "resource-limit",
+            message: consumer.probe.timedOut
+              ? "Package evaluation exceeded the time limit."
+              : "Package evaluation exceeded the output limit.",
+          },
+          state: "not-evaluated",
+        };
       } else if (consumer.probe?.exitCode !== 0) {
         result = {
           diagnostics: [
@@ -134,7 +195,7 @@ export async function testPackage(
           profileSchema: 1,
           typescript: typescript.version,
         },
-        lockfileSha256: lockfileDigest(consumer.lockfile),
+        lockfileSha256: lockfileDigest(consumer.lockfile, artifact.name),
         package: {
           files: artifact.files,
           name: artifact.name,

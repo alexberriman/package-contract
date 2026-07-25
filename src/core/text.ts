@@ -42,6 +42,9 @@ function truncateUtf8(value: string, limitBytes: number): string {
 
   const suffix = "\n<truncated>";
   const suffixBytes = Buffer.byteLength(suffix);
+  if (limitBytes <= suffixBytes) {
+    return suffix.slice(0, limitBytes);
+  }
   const contentLimit = Math.max(0, limitBytes - suffixBytes);
   let truncated = buffer.subarray(0, contentLimit).toString("utf8");
 

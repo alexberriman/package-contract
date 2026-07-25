@@ -1,4 +1,5 @@
 export {
+  type ConsumerProfileId,
   type CreateDiagnosticOptions,
   compareDiagnostics,
   createDiagnostic,
@@ -9,6 +10,7 @@ export {
   type FileRange,
 } from "./core/diagnostic.js";
 export type { PackageInput } from "./core/input.js";
+export type { PackedFile } from "./core/pack.js";
 export type {
   PackageReport,
   ReportEnvironment,

@@ -30,4 +30,12 @@ describe("normalizeText", () => {
     expect(() => normalizeText("x", { limitBytes: -1 })).toThrow(RangeError);
     expect(() => normalizeText("x", { limitBytes: 1.5 })).toThrow(RangeError);
   });
+
+  it("honors limits smaller than the truncation marker", () => {
+    for (let limit = 0; limit < 12; limit += 1) {
+      expect(
+        Buffer.byteLength(normalizeText("x".repeat(100), { limitBytes: limit })),
+      ).toBeLessThanOrEqual(limit);
+    }
+  });
 });

@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 
 import { createSafeEnvironment } from "./environment.js";
 import { hashFile } from "./hash.js";
+import { compareCodeUnits } from "./order.js";
 import { runProcess } from "./process.js";
 import { createTemporaryDirectory } from "./temporary.js";
 
@@ -56,9 +57,11 @@ function parsePackResult(stdout: string): NpmPackResult {
 export async function packDirectory(directory: string): Promise<PackArtifact> {
   const temporary = await createTemporaryDirectory("package-contract-pack-");
   const npmConfig = join(temporary.path, "npmrc");
+  const globalNpmConfig = join(temporary.path, "global-npmrc");
   await writeFile(npmConfig, "audit=false\nfund=false\nupdate-notifier=false\n", {
     mode: 0o600,
   });
+  await writeFile(globalNpmConfig, "", { mode: 0o600 });
 
   try {
     const result = await runProcess({
@@ -69,6 +72,8 @@ export async function packDirectory(directory: string): Promise<PackArtifact> {
         temporary.path,
         "--userconfig",
         npmConfig,
+        "--globalconfig",
+        globalNpmConfig,
       ],
       cwd: directory,
       env: createSafeEnvironment(),
@@ -101,7 +106,7 @@ export async function packDirectory(directory: string): Promise<PackArtifact> {
       files: Object.freeze(
         packed.files
           .map((file) => Object.freeze({ ...file }))
-          .sort((left, right) => left.path.localeCompare(right.path)),
+          .sort((left, right) => compareCodeUnits(left.path, right.path)),
       ),
       integrity: packed.integrity,
       name: packed.name,

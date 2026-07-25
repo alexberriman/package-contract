@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inspectTarball } from "../src/core/tarball.js";
 import { testPackage } from "../src/index.js";
@@ -100,6 +101,18 @@ describe("inspectTarball", () => {
     await writeFile(invalid, "invalid");
 
     await expect(inspectTarball(invalid)).rejects.toThrow();
+  });
+
+  it("rejects a tar header with an invalid checksum", async () => {
+    const compressed = await readFile(goodTarball);
+    const tar = gunzipSync(compressed);
+    tar[0] = tar[0] === 112 ? 113 : 112;
+    const invalid = join(fixtureRoot, "invalid-checksum.tgz");
+    await writeFile(invalid, gzipSync(tar));
+
+    await expect(inspectTarball(invalid)).rejects.toThrow(
+      "tarball contains an invalid header checksum",
+    );
   });
 });
 

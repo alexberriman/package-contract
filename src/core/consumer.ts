@@ -25,6 +25,7 @@ export async function runRootEsmConsumer(
 ): Promise<ConsumerRun> {
   const temporary = await createTemporaryDirectory("package-contract-consumer-");
   const npmConfig = join(temporary.path, "npmrc");
+  const globalNpmConfig = join(temporary.path, "global-npmrc");
   const cache = join(temporary.path, "npm-cache");
   await writeFile(
     join(temporary.path, "package.json"),
@@ -36,6 +37,7 @@ export async function runRootEsmConsumer(
     `audit=false\ncache=${cache}\nfund=false\nignore-scripts=true\nupdate-notifier=false\n`,
     { mode: 0o600 },
   );
+  await writeFile(globalNpmConfig, "", { mode: 0o600 });
   await writeFile(
     join(temporary.path, "probe.mjs"),
     `await import(${JSON.stringify(artifact.name)});\n`,
@@ -53,6 +55,8 @@ export async function runRootEsmConsumer(
         "--package-lock=true",
         "--userconfig",
         npmConfig,
+        "--globalconfig",
+        globalNpmConfig,
         ...(options.offline ? ["--offline"] : []),
       ],
       cwd: temporary.path,

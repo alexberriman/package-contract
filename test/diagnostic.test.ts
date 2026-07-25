@@ -115,6 +115,39 @@ describe("createDiagnostic", () => {
       TypeError,
     );
     expect(() => createDiagnostic(diagnostic({ title: " " }))).toThrow(TypeError);
+    expect(() => createDiagnostic(diagnostic({ subpath: "./../escape" }))).toThrow(
+      TypeError,
+    );
+    expect(() => createDiagnostic(diagnostic({ command: "" }))).toThrow(TypeError);
+    expect(() =>
+      createDiagnostic(
+        diagnostic({
+          explainedBy: ["another-tool:UNKNOWN"],
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      createDiagnostic(
+        diagnostic({
+          profile: {
+            moduleSystem: "cjs",
+            runtime: "latest",
+            typescriptResolution: "bundler",
+          },
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      createDiagnostic(
+        diagnostic({
+          sourceRange: {
+            end: { column: 1, line: 1 },
+            file: "../package.json",
+            start: { column: 0, line: 1 },
+          },
+        }),
+      ),
+    ).toThrow(TypeError);
   });
 
   it("orders diagnostics by stable identity fields", () => {
