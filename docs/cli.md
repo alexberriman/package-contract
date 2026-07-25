@@ -34,11 +34,13 @@ overwritten. Lifecycle scripts remain disabled in the provided install command.
 package-contract compare <before> <after>
 ```
 
-Both artifacts run through the same profiles and an isolated shared npm cache.
-Diagnostics are classified as regressions, fixes, or unchanged by their stable
-identity. The comparison is marked inconclusive when the normalized lockfiles
-show a different dependency graph, or when either installation produced no
-lockfile. Inconclusive comparisons exit with code 2.
+Both artifacts run through the same profiles. The before artifact populates an
+isolated npm cache, and the after artifact installs offline from that captured
+state. Diagnostics are classified as regressions, fixes, or unchanged by their
+stable identity. The comparison is marked inconclusive when the normalized
+lockfiles show a different dependency graph, when the captured cache cannot
+satisfy the after artifact, or when either installation produced no lockfile.
+Inconclusive comparisons exit with code 2.
 
 ## Exit codes
 
