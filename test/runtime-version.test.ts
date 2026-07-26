@@ -22,9 +22,10 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
       join(root, "package.json"),
       `${JSON.stringify(
         {
+          bin: { "node-floor": "./cli.js" },
           engines: { node: ">=18" },
           exports: "./index.js",
-          files: ["index.js"],
+          files: ["index.js", "cli.js"],
           name: "package-contract-node18-fixture",
           type: "module",
           version: "1.0.0",
@@ -36,6 +37,10 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
     await writeFile(
       join(root, "index.js"),
       "import { globSync } from 'node:fs';\nexport const value = globSync;\n",
+    );
+    await writeFile(
+      join(root, "cli.js"),
+      "#!/usr/bin/env node\nimport { globSync } from 'node:fs';\nglobSync('*');\n",
     );
     const pack = join(root, "pack");
     await mkdir(pack);
@@ -59,6 +64,7 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
     const oldRuntime = await testPackage(
       { kind: "tarball", path: tarball },
       {
+        bins: [{ name: "node-floor" }],
         profiles: [
           {
             moduleSystem: "esm",
@@ -75,11 +81,17 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
         code: "PC1001",
         explainedBy: null,
       }),
+      expect.objectContaining({
+        code: "PC1004",
+        explainedBy: null,
+        subpath: "./bin/node-floor",
+      }),
     ]);
 
     const currentRuntime = await testPackage(
       { kind: "tarball", path: tarball },
       {
+        bins: [{ name: "node-floor" }],
         profiles: [
           {
             moduleSystem: "esm",
@@ -91,6 +103,10 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
     expect(currentRuntime.diagnostics).toEqual([]);
     expect(currentRuntime.results).toEqual([
       expect.objectContaining({ state: "pass" }),
+      expect.objectContaining({
+        state: "pass",
+        subpath: "./bin/node-floor",
+      }),
     ]);
   });
 });

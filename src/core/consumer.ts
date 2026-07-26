@@ -168,12 +168,13 @@ export async function runBinProbe(
   consumer: InstalledConsumer,
   name: string,
   arguments_: readonly string[],
+  runtimeExecutable: string = process.execPath,
 ): Promise<ProcessResult> {
   return runProcess({
-    args: [...arguments_],
+    args: [join(consumer.path, "node_modules", ".bin", name), ...arguments_],
     cwd: consumer.path,
     env: createSafeEnvironment(),
-    executable: join(consumer.path, "node_modules", ".bin", name),
+    executable: runtimeExecutable,
     timeoutMs: 30_000,
   });
 }

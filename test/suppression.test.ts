@@ -7,7 +7,7 @@ import type { IncumbentFinding } from "../src/integrations/types.js";
 const diagnostic = createDiagnostic({
   code: "PC1002",
   command: "typescript nodenext <consumer>/probe.mts",
-  evidence: "TS2307: Cannot find module.",
+  evidence: "TS2307: Cannot find module 'example/feature'.",
   explainedBy: null,
   profile: {
     moduleSystem: "esm",
@@ -46,7 +46,7 @@ function failedResult(): ProbeResult {
 
 describe("incumbent suppression", () => {
   it("records a matching explanation without changing diagnostic identity", () => {
-    const result = applyIncumbentExplanations(failedResult(), [finding()]);
+    const result = applyIncumbentExplanations(failedResult(), [finding()], "example");
 
     expect(result.state).toBe("fail");
     if (result.state !== "fail") {
@@ -59,13 +59,17 @@ describe("incumbent suppression", () => {
   });
 
   it("accepts only known Publint declaration explanations", () => {
-    const explained = applyIncumbentExplanations(failedResult(), [
-      finding({
-        code: "EXPORTS_TYPES_SHOULD_BE_FIRST",
-        details: { path: ["exports", "./feature", "types"] },
-        tool: "publint",
-      }),
-    ]);
+    const explained = applyIncumbentExplanations(
+      failedResult(),
+      [
+        finding({
+          code: "EXPORTS_TYPES_SHOULD_BE_FIRST",
+          details: { path: ["exports", "./feature", "types"] },
+          tool: "publint",
+        }),
+      ],
+      "example",
+    );
 
     expect(explained.state).toBe("fail");
     if (explained.state !== "fail") {
@@ -90,7 +94,31 @@ describe("incumbent suppression", () => {
     ],
     ["other tool", finding({ tool: "publint" })],
   ])("does not suppress an ambiguous %s", (_label, incumbent) => {
-    const result = applyIncumbentExplanations(failedResult(), [incumbent]);
+    const result = applyIncumbentExplanations(failedResult(), [incumbent], "example");
+
+    expect(result.state).toBe("fail");
+    if (result.state !== "fail") {
+      throw new Error("expected a failed result");
+    }
+    expect(result.diagnostics[0]?.explainedBy).toBeNull();
+  });
+
+  it("keeps an unrelated same-subpath failure residual", () => {
+    const unrelated = {
+      ...diagnostic,
+      evidence:
+        "TS2307 <consumer>/node_modules/example/index.d.ts: Cannot find module 'unrelated-types'.",
+    };
+    const result = applyIncumbentExplanations(
+      {
+        diagnostics: [unrelated],
+        profile: unrelated.profile,
+        state: "fail",
+        subpath: unrelated.subpath,
+      },
+      [finding()],
+      "example",
+    );
 
     expect(result.state).toBe("fail");
     if (result.state !== "fail") {

@@ -62,7 +62,7 @@ export interface TestPackageOptions {
   readonly invokingDirectory?: string;
   readonly npmCachePath?: string;
   readonly offline?: boolean;
-  readonly profiles?: readonly ConsumerProfileInput[];
+  readonly profiles?: readonly (ConsumerProfile | ConsumerProfileInput)[];
   readonly runtimeExecutable?: string;
   readonly typescriptPath?: string;
 }
@@ -367,7 +367,12 @@ async function binResult(
       `The package does not declare the ${action.name} executable.`,
     );
   }
-  const probe = await runBinProbe(consumer, action.name, action.arguments);
+  const probe = await runBinProbe(
+    consumer,
+    action.name,
+    action.arguments,
+    profile.runtime.executable,
+  );
   if (probe.timedOut || probe.truncated) {
     return notEvaluated(
       profile,
@@ -456,12 +461,13 @@ async function installationFailure(
   artifact: PackArtifact,
   consumer: InstalledConsumer,
   profile: ConsumerProfile,
+  subpath: string,
   offline: boolean,
 ): Promise<ProbeResult> {
   if (consumer.install.timedOut || consumer.install.truncated) {
     return notEvaluated(
       profile,
-      ".",
+      subpath,
       "resource-limit",
       consumer.install.timedOut
         ? "Consumer installation exceeded the time limit."
@@ -472,14 +478,14 @@ async function installationFailure(
   if (offline && /ENOTCACHED|cache miss|offline mode/i.test(evidence)) {
     return notEvaluated(
       profile,
-      ".",
+      subpath,
       "offline-cache-miss",
       "The isolated npm cache did not contain every dependency.",
     );
   }
   return failed(
     profile,
-    ".",
+    subpath,
     createDiagnostic(
       {
         code: "PC1000",
@@ -489,7 +495,7 @@ async function installationFailure(
         profile: profile.id,
         reproducible: false,
         severity: "error",
-        subpath: ".",
+        subpath,
         title: "Consumer installation failed",
       },
       {
@@ -566,22 +572,67 @@ export async function testPackage(
     });
     try {
       const results: ProbeResult[] = [];
+      const exports = enumerateExportSubpaths(artifact.manifest);
+      const expansion = expandExportPatterns(
+        artifact.manifest,
+        exports.patterns,
+        artifact.files.map(({ path }) => path),
+      );
+      const explicit = [
+        ...new Set([
+          ...exports.explicit,
+          ...expansion.expanded,
+          ...actions.map(({ subpath }) => subpath),
+        ]),
+      ].sort(compareCodeUnits);
+      const tasks =
+        options.profiles === undefined
+          ? explicit.flatMap((subpath) =>
+              profiles.map((profile) => ({ profile, subpath })),
+            )
+          : profiles.flatMap((profile) =>
+              [
+                ...new Set([
+                  ...profile.subpaths,
+                  ...actions.map(({ subpath }) => subpath),
+                ]),
+              ]
+                .sort(compareCodeUnits)
+                .map((subpath) => ({ profile, subpath })),
+            );
       if (consumer.install.exitCode !== 0) {
+        const installTasks = [
+          ...tasks,
+          ...profiles
+            .filter(({ id }) => id.typescriptResolution === null)
+            .flatMap((profile) =>
+              bins.map((bin) => ({
+                profile,
+                subpath: `./bin/${bin.name}`,
+              })),
+            ),
+        ].filter(
+          (task, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.profile === task.profile &&
+                candidate.subpath === task.subpath,
+            ) === index,
+        );
         results.push(
-          await installationFailure(
-            artifact,
-            consumer,
-            profiles[0] as ConsumerProfile,
-            options.offline === true,
-          ),
+          ...(await Promise.all(
+            installTasks.map(({ profile, subpath }) =>
+              installationFailure(
+                artifact,
+                consumer,
+                profile,
+                subpath,
+                options.offline === true,
+              ),
+            ),
+          )),
         );
       } else {
-        const exports = enumerateExportSubpaths(artifact.manifest);
-        const expansion = expandExportPatterns(
-          artifact.manifest,
-          exports.patterns,
-          artifact.files.map(({ path }) => path),
-        );
         for (const pattern of expansion.unresolved) {
           results.push(
             ...profiles.map((profile) =>
@@ -594,28 +645,6 @@ export async function testPackage(
             ),
           );
         }
-        const explicit = [
-          ...new Set([
-            ...exports.explicit,
-            ...expansion.expanded,
-            ...actions.map(({ subpath }) => subpath),
-          ]),
-        ].sort(compareCodeUnits);
-        const tasks =
-          options.profiles === undefined
-            ? explicit.flatMap((subpath) =>
-                profiles.map((profile) => ({ profile, subpath })),
-              )
-            : profiles.flatMap((profile) =>
-                [
-                  ...new Set([
-                    ...profile.subpaths,
-                    ...actions.map(({ subpath }) => subpath),
-                  ]),
-                ]
-                  .sort(compareCodeUnits)
-                  .map((subpath) => ({ profile, subpath })),
-              );
         const typeBatches = new Map<
           ConsumerProfile,
           Promise<ReadonlyMap<string, TypeScriptProbeResult>>
@@ -707,11 +736,25 @@ export async function testPackage(
             )),
           );
         }
-        const binProfile = profiles.find(({ id }) => id.typescriptResolution === null);
-        if (binProfile !== undefined) {
+        const binProfiles = profiles
+          .filter(({ id }) => id.typescriptResolution === null)
+          .filter(
+            (profile, index, candidates) =>
+              candidates.findIndex(
+                (candidate) =>
+                  candidate.runtime.executable === profile.runtime.executable &&
+                  candidate.runtime.version === profile.runtime.version,
+              ) === index,
+          );
+        if (binProfiles.length > 0) {
           results.push(
-            ...(await mapConcurrent(bins, concurrency, async (action) =>
-              binResult(artifact, consumer, binProfile, action),
+            ...(await mapConcurrent(
+              binProfiles.flatMap((profile) =>
+                bins.map((action) => ({ action, profile })),
+              ),
+              concurrency,
+              async ({ action, profile }) =>
+                binResult(artifact, consumer, profile, action),
             )),
           );
         }
@@ -719,7 +762,7 @@ export async function testPackage(
 
       const sortedResults = sortResults(
         results.map((result) =>
-          applyIncumbentExplanations(result, incumbents.findings),
+          applyIncumbentExplanations(result, incumbents.findings, artifact.name),
         ),
       );
       const diagnostics = Object.freeze(

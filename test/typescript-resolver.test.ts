@@ -67,6 +67,8 @@ describe("TypeScript compiler resolution boundaries", () => {
     [{ name: "typescript" }, "missing version"],
     [{ name: "typescript", version: "next" }, "invalid version"],
     [{ name: "typescript", version: "5.5.9" }, "too old"],
+    [{ name: "typescript", version: "7.0.1" }, "unvalidated native patch"],
+    [{ name: "typescript", version: "7.1.0" }, "unvalidated native minor"],
     [{ name: "typescript", version: "8.0.0" }, "too new"],
   ])("rejects an unsupported manifest: %s", async (manifest, _label) => {
     const packagePath = await fakeTypeScript(manifest);

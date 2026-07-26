@@ -35,6 +35,15 @@ Options:
 
 type Reporter = "github" | "human" | "json";
 
+function hasIncompleteEvaluation(
+  results: Awaited<ReturnType<typeof testPackage>>["results"],
+): boolean {
+  return results.some(
+    (result) =>
+      result.state === "not-evaluated" && result.reason.code !== "inapplicable-profile",
+  );
+}
+
 function parseReporter(json: boolean | undefined, value: string | undefined): Reporter {
   if (json === true && value !== undefined && value !== "json") {
     throw new Error("--json cannot be combined with a non-JSON reporter");
@@ -161,6 +170,8 @@ async function main(): Promise<void> {
     }
     if (report.diagnostics.some(({ severity }) => severity === "error")) {
       process.exitCode = 1;
+    } else if (hasIncompleteEvaluation(report.results)) {
+      process.exitCode = 2;
     }
   } finally {
     await packed?.cleanup();

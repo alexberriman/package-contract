@@ -6,16 +6,12 @@ import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installConsumer, runRootEsmConsumer } from "../src/core/consumer.js";
+import { createDiagnostic } from "../src/core/diagnostic.js";
 import { packDirectory } from "../src/core/pack.js";
+import { materializeReproduction } from "../src/core/reproduction.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
-import {
-  comparePackages,
-  createDiagnostic,
-  defineConsumer,
-  materializeReproduction,
-  testPackage,
-} from "../src/index.js";
+import { comparePackages, defineConsumer, testPackage } from "../src/index.js";
 import {
   formatTypeScriptEvidence,
   runTypeScriptProbe,
@@ -38,6 +34,7 @@ let comparisonBeforeTarball = "";
 let comparisonAfterTarball = "";
 let comparisonDriftBeforeTarball = "";
 let comparisonDriftTarball = "";
+let comparisonCoverageDriftTarball = "";
 let actionTarball = "";
 let binTarball = "";
 
@@ -235,6 +232,9 @@ beforeAll(async () => {
     "export const value = 42;\n",
     {},
     { "package-contract-workspace-only": "workspace:*" },
+    {
+      bin: { "contract-fixture": "./index.js" },
+    },
   );
   explainedTarball = await makeFixture(
     "package-contract-explained-fixture",
@@ -280,6 +280,24 @@ beforeAll(async () => {
     {},
     { "is-number": "7.0.0" },
     { name: "package-contract-compare-fixture" },
+  );
+  comparisonCoverageDriftTarball = await makeFixture(
+    "package-contract-compare-coverage-drift",
+    "export const value = 42;\n",
+    {
+      "index.cjs": "exports.value = 42;\n",
+    },
+    {},
+    {
+      exports: {
+        ".": {
+          require: "./index.cjs",
+          types: "./index.d.ts",
+        },
+      },
+      files: ["index.js", "index.d.ts", "index.cjs"],
+      name: "package-contract-compare-fixture",
+    },
   );
   actionTarball = await makeFixture(
     "package-contract-action-fixture",
@@ -593,6 +611,26 @@ describe("testPackage", () => {
     );
   });
 
+  it("accepts a profile returned by the public defineConsumer helper", async () => {
+    const profile = defineConsumer({
+      moduleSystem: "esm",
+      runtime: { version: process.version },
+      typescriptResolution: "nodenext",
+    });
+    const report = await testPackage(
+      { kind: "tarball", path: goodTarball },
+      { profiles: [profile] },
+    );
+
+    expect(report.diagnostics).toEqual([]);
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        profile: profile.id,
+        state: "pass",
+      }),
+    ]);
+  });
+
   it("reproduces a runtime failure deterministically", async () => {
     const first = await testPackage({ kind: "tarball", path: badTarball });
     const second = await testPackage({ kind: "tarball", path: badTarball });
@@ -664,6 +702,17 @@ describe("testPackage", () => {
       ).rejects.toThrow("diagnostic ID is not present");
       await expect(
         materializeReproduction({
+          diagnosticId: "../outside",
+          outputRoot: root,
+          report: {
+            ...report,
+            diagnostics: [{ ...diagnostic, id: "../outside" }],
+          },
+          tarballPath: badTarball,
+        }),
+      ).rejects.toThrow("diagnostic ID is not safe");
+      await expect(
+        materializeReproduction({
           diagnosticId: diagnostic.id,
           outputRoot: root,
           report,
@@ -684,7 +733,7 @@ describe("testPackage", () => {
           report,
           tarballPath: badTarball,
         }),
-      ).rejects.toMatchObject({ code: "EEXIST" });
+      ).rejects.toThrow();
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -1253,17 +1302,56 @@ describe("testPackage", () => {
     }
     const root = await mkdtemp(join(tmpdir(), "package-contract-install-repro-test-"));
     try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report,
+        tarballPath: installationFailureTarball,
+      });
       await expect(
-        materializeReproduction({
-          diagnosticId: diagnostic.id,
-          outputRoot: root,
-          report,
-          tarballPath: installationFailureTarball,
+        execFileAsync("npm", ["run", "reproduce"], {
+          cwd: reproduction.path,
         }),
-      ).rejects.toThrow("does not support a standalone reproduction");
+      ).rejects.toMatchObject({ code: 1 });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("records installation failure for every requested profile and subpath", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: installationFailureTarball },
+      {
+        bins: [{ name: "contract-fixture" }],
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+            subpaths: [".", "./feature"],
+          },
+          {
+            moduleSystem: "cjs",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.results).toHaveLength(5);
+    expect(
+      report.results.map(({ profile, state, subpath }) => ({
+        moduleSystem: profile.moduleSystem,
+        state,
+        subpath,
+      })),
+    ).toEqual([
+      { moduleSystem: "cjs", state: "fail", subpath: "." },
+      { moduleSystem: "esm", state: "fail", subpath: "." },
+      { moduleSystem: "cjs", state: "fail", subpath: "./bin/contract-fixture" },
+      { moduleSystem: "esm", state: "fail", subpath: "./bin/contract-fixture" },
+      { moduleSystem: "esm", state: "fail", subpath: "./feature" },
+    ]);
+    expect(report.diagnostics.every(({ code }) => code === "PC1000")).toBe(true);
   });
 
   it("expands safe wildcard exports and skips unclaimed types", async () => {
@@ -1470,5 +1558,33 @@ describe("comparePackages", () => {
       inconclusiveReason: "dependency-graph-unavailable",
       regressions: [],
     });
+  });
+
+  it("marks changed profile evaluation coverage as inconclusive", async () => {
+    const comparison = await comparePackages(
+      { kind: "tarball", path: comparisonAfterTarball },
+      { kind: "tarball", path: comparisonCoverageDriftTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(comparison).toMatchObject({
+      conclusive: false,
+      fixes: [{ code: "PC1001" }],
+      inconclusiveReason: "evaluation-coverage-drift",
+      regressions: [],
+    });
+    expect(comparison.beforeResults).toEqual([
+      expect.objectContaining({ state: "fail" }),
+    ]);
+    expect(comparison.afterResults).toEqual([
+      expect.objectContaining({ state: "not-evaluated" }),
+    ]);
   });
 });

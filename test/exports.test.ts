@@ -118,19 +118,19 @@ describe("declaredModuleSystems", () => {
     expect([...systems]).toEqual(["esm", "cjs"]);
   });
 
-  it("uses extension and package type for unconditional targets", () => {
+  it("treats unconditional targets as importable and requireable", () => {
     expect([
       ...declaredModuleSystems(
         manifest({ exports: "./index.mjs", type: "commonjs" }),
         ".",
       ),
-    ]).toEqual(["esm"]);
+    ]).toEqual(["esm", "cjs"]);
     expect([
       ...declaredModuleSystems(
         manifest({ exports: "./index.js", type: "commonjs" }),
         ".",
       ),
-    ]).toEqual(["cjs"]);
+    ]).toEqual(["esm", "cjs"]);
     expect([
       ...declaredModuleSystems(
         manifest({
@@ -138,7 +138,7 @@ describe("declaredModuleSystems", () => {
         }),
         ".",
       ),
-    ]).toEqual(["cjs", "esm"]);
+    ]).toEqual(["esm", "cjs"]);
   });
 
   it("returns no claim for a blocked or absent subpath", () => {
@@ -150,7 +150,7 @@ describe("declaredModuleSystems", () => {
     ]).toEqual([]);
   });
 
-  it("handles nested custom conditions and ambiguous wildcard matches", () => {
+  it("ignores unavailable custom conditions and ambiguous wildcard matches", () => {
     expect([
       ...declaredModuleSystems(
         manifest({
@@ -166,7 +166,7 @@ describe("declaredModuleSystems", () => {
         }),
         ".",
       ),
-    ]).toEqual(["esm", "cjs"]);
+    ]).toEqual([]);
     expect([
       ...declaredModuleSystems(
         manifest({
@@ -179,6 +179,64 @@ describe("declaredModuleSystems", () => {
         "./feature/xy",
       ),
     ]).toEqual([]);
+  });
+
+  it("selects actual Node conditions in declaration order", () => {
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: {
+            ".": {
+              browser: "./browser.js",
+              node: {
+                import: "./index.js",
+                require: "./index.cjs",
+              },
+            },
+          },
+        }),
+        ".",
+      ),
+    ]).toEqual(["esm", "cjs"]);
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: {
+            ".": {
+              import: "./index.js",
+              default: "./fallback.js",
+            },
+          },
+        }),
+        ".",
+      ),
+    ]).toEqual(["esm", "cjs"]);
+    expect([
+      ...declaredModuleSystems(
+        manifest({
+          exports: {
+            ".": {
+              import: "./index.js",
+              browser: "./browser.js",
+            },
+          },
+        }),
+        ".",
+      ),
+    ]).toEqual(["esm"]);
+  });
+
+  it("supports both mechanisms for legacy packages and module-sync", () => {
+    expect([...declaredModuleSystems(manifest({ type: "commonjs" }), ".")]).toEqual([
+      "cjs",
+      "esm",
+    ]);
+    expect([
+      ...declaredModuleSystems(
+        manifest({ exports: { ".": { "module-sync": "./index.js" } } }),
+        ".",
+      ),
+    ]).toEqual(["esm", "cjs"]);
   });
 });
 

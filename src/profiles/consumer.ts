@@ -43,10 +43,23 @@ function normalizeSubpaths(subpaths: readonly string[]): readonly string[] {
     }
     unique.add(subpath);
   }
+  if (unique.size === 0) {
+    throw new TypeError("consumer subpaths must contain at least one entry");
+  }
   return Object.freeze([...unique].sort(compareCodeUnits));
 }
 
-export function defineConsumer(input: ConsumerProfileInput): ConsumerProfile {
+export function defineConsumer(
+  input: ConsumerProfileInput | ConsumerProfile,
+): ConsumerProfile {
+  if ("id" in input) {
+    return defineConsumer({
+      moduleSystem: input.id.moduleSystem,
+      runtime: input.runtime,
+      subpaths: input.subpaths,
+      typescriptResolution: input.id.typescriptResolution,
+    });
+  }
   const version = input.runtime.version.replace(/^v/, "");
   if (!RUNTIME_VERSION.test(version)) {
     throw new TypeError("runtime version must contain one to three numeric parts");

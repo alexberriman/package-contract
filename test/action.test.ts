@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineBinActions, defineRuntimeActions } from "../src/index.js";
+import { defineBinActions, defineRuntimeActions } from "../src/profiles/action.js";
 
 describe("defineRuntimeActions", () => {
   it("normalizes actions deterministically and freezes arguments", () => {

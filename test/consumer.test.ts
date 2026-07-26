@@ -35,6 +35,7 @@ describe("defineConsumer", () => {
     expect(profile.runtime.executable).toBe(process.execPath);
     expect(profile.subpaths).toEqual(["."]);
     expect(profile.id.typescriptResolution).toBeNull();
+    expect(defineConsumer(profile)).toEqual(profile);
   });
 
   it("rejects malformed versions and subpaths", () => {
@@ -58,6 +59,13 @@ describe("defineConsumer", () => {
         subpaths: ["./feature\nforged"],
       }),
     ).toThrow(TypeError);
+    expect(() =>
+      defineConsumer({
+        moduleSystem: "esm",
+        runtime: { version: "24" },
+        subpaths: [],
+      }),
+    ).toThrow("at least one");
   });
 
   it("rejects bundler resolution for CommonJS", () => {

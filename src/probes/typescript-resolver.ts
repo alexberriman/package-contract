@@ -74,7 +74,13 @@ export async function resolveTypeScriptCompiler(
   }
   const major = Number(match[1]);
   const minor = Number(match[2]);
-  if (major < 5 || major > 7 || (major === 5 && minor < 6)) {
+  const patch = Number(match[3]);
+  if (
+    major < 5 ||
+    major > 7 ||
+    (major === 5 && minor < 6) ||
+    (major === 7 && (minor !== 0 || patch < 2))
+  ) {
     return null;
   }
   const kind: TypeScriptAdapterKind = major >= 7 ? "native" : "classic";

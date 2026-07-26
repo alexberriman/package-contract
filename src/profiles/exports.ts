@@ -51,60 +51,27 @@ export function enumerateExportSubpaths(manifest: PackageManifest): ExportSubpat
   });
 }
 
-function targetFormat(
-  target: string,
-  packageType: PackageManifest["type"],
-): "cjs" | "esm" | null {
-  if (target.endsWith(".mjs")) {
-    return "esm";
-  }
-  if (target.endsWith(".cjs")) {
-    return "cjs";
-  }
-  if (target.endsWith(".js")) {
-    return packageType === "module" ? "esm" : "cjs";
-  }
-  return null;
-}
-
-function collectSystems(
+function targetSupportsConditions(
   target: JsonValue,
-  packageType: PackageManifest["type"],
-  systems: Set<"cjs" | "esm">,
-  condition?: string,
-): void {
+  conditions: ReadonlySet<string>,
+): boolean {
   if (typeof target === "string") {
-    if (condition === "import") {
-      systems.add("esm");
-    } else if (condition === "require") {
-      systems.add("cjs");
-    } else {
-      const format = targetFormat(target, packageType);
-      if (format !== null) {
-        systems.add(format);
-      }
-    }
-    return;
+    return true;
   }
   if (Array.isArray(target)) {
-    for (const entry of target) {
-      collectSystems(entry, packageType, systems, condition);
-    }
-    return;
+    return target.some((entry) => targetSupportsConditions(entry, conditions));
   }
   if (isRecord(target)) {
     for (const [key, value] of Object.entries(target)) {
       if (key === "types") {
         continue;
       }
-      collectSystems(
-        value,
-        packageType,
-        systems,
-        key === "import" || key === "require" ? key : condition,
-      );
+      if (key === "default" || conditions.has(key)) {
+        return targetSupportsConditions(value, conditions);
+      }
     }
   }
+  return false;
 }
 
 function targetForSubpath(
@@ -135,7 +102,8 @@ export function declaredModuleSystems(
   const systems = new Set<"cjs" | "esm">();
   const exports = manifest.exports;
   if (exports === undefined) {
-    systems.add(manifest.type === "module" ? "esm" : "cjs");
+    systems.add("cjs");
+    systems.add("esm");
     return systems;
   }
 
@@ -146,7 +114,13 @@ export function declaredModuleSystems(
       target = targetForSubpath(exports, subpath);
     }
   }
-  collectSystems(target, manifest.type, systems);
+  const sharedConditions = ["module-sync", "node", "node-addons"];
+  if (targetSupportsConditions(target, new Set([...sharedConditions, "import"]))) {
+    systems.add("esm");
+  }
+  if (targetSupportsConditions(target, new Set([...sharedConditions, "require"]))) {
+    systems.add("cjs");
+  }
   return systems;
 }
 

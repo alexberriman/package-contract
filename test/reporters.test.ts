@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createDiagnostic } from "../src/core/diagnostic.js";
 import type { PackageReport } from "../src/core/report.js";
-import {
-  renderGitHubReport,
-  renderHumanComparison,
-  renderHumanReport,
-  serializeJson,
-  serializeJsonReport,
-} from "../src/index.js";
+import { renderHumanComparison } from "../src/reporters/comparison.js";
+import { renderGitHubReport } from "../src/reporters/github.js";
+import { renderHumanReport } from "../src/reporters/human.js";
+import { serializeJson, serializeJsonReport } from "../src/reporters/json.js";
 
 function report(withDiagnostic = true): PackageReport {
   const diagnostic = createDiagnostic({
@@ -69,7 +66,9 @@ describe("reporters", () => {
     expect(
       renderHumanComparison({
         after: base.package,
+        afterResults: [],
         before: base.package,
+        beforeResults: [],
         conclusive: false,
         fixes: [],
         inconclusiveReason: "dependency-graph-drift",
@@ -90,7 +89,9 @@ describe("reporters", () => {
     expect(
       renderHumanComparison({
         after: base.package,
+        afterResults: [],
         before: base.package,
+        beforeResults: [],
         conclusive: true,
         fixes: [diagnostic],
         inconclusiveReason: null,
@@ -101,7 +102,9 @@ describe("reporters", () => {
     expect(
       renderHumanComparison({
         after: base.package,
+        afterResults: [],
         before: base.package,
+        beforeResults: [],
         conclusive: true,
         fixes: [],
         inconclusiveReason: null,
@@ -116,7 +119,9 @@ describe("reporters", () => {
     expect(
       renderHumanComparison({
         after: base.package,
+        afterResults: [],
         before: base.package,
+        beforeResults: [],
         conclusive: false,
         fixes: [],
         inconclusiveReason: null,

@@ -4,7 +4,7 @@ import {
   compareDiagnostics,
   createDiagnostic,
   type DiagnosticInput,
-} from "../src/index.js";
+} from "../src/core/diagnostic.js";
 
 function diagnostic(overrides: Partial<DiagnosticInput> = {}): DiagnosticInput {
   return {

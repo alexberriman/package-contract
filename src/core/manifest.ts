@@ -1,4 +1,4 @@
-export type JsonPrimitive = boolean | number | string | null;
+type JsonPrimitive = boolean | number | string | null;
 export type JsonValue =
   | JsonPrimitive
   | readonly JsonValue[]
