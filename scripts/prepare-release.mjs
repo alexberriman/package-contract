@@ -85,13 +85,36 @@ try {
   if (
     typeof result.filename !== "string" ||
     typeof result.integrity !== "string" ||
-    typeof result.shasum !== "string"
+    typeof result.name !== "string" ||
+    typeof result.shasum !== "string" ||
+    typeof result.version !== "string"
   ) {
     throw new Error("npm pack omitted release artifact metadata");
+  }
+  if (
+    result.name !== packageManifest.name ||
+    result.version !== packageManifest.version
+  ) {
+    throw new Error("npm pack returned an unexpected package identity");
   }
   const tarball = join(releaseDirectory, basename(result.filename));
   const bytes = await readFile(tarball);
   const unpacked = await unpack(bytes);
+  const packedManifestFile = unpacked.files.find(
+    ({ name }) => name === `${unpacked.rootDir}/package.json`,
+  );
+  if (packedManifestFile === undefined) {
+    throw new Error("release tarball is missing package.json");
+  }
+  const packedManifest = JSON.parse(
+    new TextDecoder("utf8", { fatal: true }).decode(packedManifestFile.data),
+  );
+  if (
+    packedManifest.name !== packageManifest.name ||
+    packedManifest.version !== packageManifest.version
+  ) {
+    throw new Error("release tarball contains an unexpected package identity");
+  }
   const names = unpacked.files.map(({ name }) =>
     name.startsWith(`${unpacked.rootDir}/`)
       ? name.slice(unpacked.rootDir.length + 1)
@@ -180,6 +203,11 @@ try {
   }
 }`,
       ],
+      consumer,
+    );
+    run(
+      process.execPath,
+      [join(consumer, "node_modules", ".bin", "package-contract"), "--version"],
       consumer,
     );
     await writeFile(

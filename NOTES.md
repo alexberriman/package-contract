@@ -23,9 +23,12 @@
 - The required incumbent integrations make literal zero production dependencies
   impossible. The acceptable target is no convenience dependencies and a small,
   justified runtime graph.
-- M1 begins with global coverage gates of 85% statements and lines, 80%
-  branches, and 95% functions while subprocess error paths are still being
-  built. The v1 release gate remains 95% for every metric.
+- M1 began with lower provisional coverage gates while subprocess error paths
+  were still being built. The final v1 gates are 95% statements and lines, 90%
+  branches, and 100% functions globally, plus per-file floors of 75%
+  statements and lines, 70% branches, and 100% functions. The per-file gate
+  prevents strong modules from hiding weak ones without rewarding artificial
+  assertions for defensive platform and subprocess branches.
 - The first adversarial review caught an npm command that had added development
   transitive packages to `dependencies`. They were removed before any release,
   the lockfile was regenerated, and tarball checks now assert there are no
