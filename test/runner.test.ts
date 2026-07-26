@@ -283,13 +283,13 @@ beforeAll(async () => {
     "export const value = 42;\n",
     {
       "feature.js":
-        "import { readFileSync } from 'node:fs';\nreadFileSync(new URL('./feature-data.json', import.meta.url));\n",
+        "import { readFileSync } from 'node:fs';\nreadFileSync(new URL('./foo/missing.js', import.meta.url));\n",
     },
     {},
     {
       exports: {
         ".": {
-          types: "./feature",
+          browser: "./missing.js",
           import: "./feature.js",
         },
       },
@@ -1022,7 +1022,7 @@ describe("testPackage", () => {
     expect(report.diagnostics).toEqual([
       expect.objectContaining({
         code: "PC1001",
-        evidence: expect.stringContaining("feature-data.json"),
+        evidence: expect.stringContaining("foo/missing.js"),
         explainedBy: null,
       }),
     ]);

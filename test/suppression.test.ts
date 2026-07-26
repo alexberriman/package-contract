@@ -198,6 +198,39 @@ describe("incumbent suppression", () => {
     expect(result.diagnostics[0]?.explainedBy).toEqual(["publint:FILE_DOES_NOT_EXIST"]);
   });
 
+  it("does not match the same filename below a different package directory", () => {
+    const runtime = {
+      ...diagnostic,
+      code: "PC1001",
+      evidence:
+        "Error: Cannot find module '<consumer>/node_modules/example/foo/missing.js'",
+      subpath: ".",
+    };
+    const result = applyIncumbentExplanations(
+      {
+        diagnostics: [runtime],
+        profile: runtime.profile,
+        state: "fail",
+        subpath: runtime.subpath,
+      },
+      [
+        finding({
+          code: "FILE_DOES_NOT_EXIST",
+          details: { target: "./missing.js" },
+          subpath: ".",
+          tool: "publint",
+        }),
+      ],
+      "example",
+    );
+
+    expect(result.state).toBe("fail");
+    if (result.state !== "fail") {
+      throw new Error("expected a failed result");
+    }
+    expect(result.diagnostics[0]?.explainedBy).toBeNull();
+  });
+
   it.each([null, [], { path: ["exports", "."] }])(
     "ignores a Publint finding without a concrete target: %j",
     (details) => {

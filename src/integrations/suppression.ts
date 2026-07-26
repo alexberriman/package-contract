@@ -75,6 +75,7 @@ function detailStrings(value: JsonValue): readonly string[] {
 function evidenceHasFindingTarget(
   diagnostic: Diagnostic,
   finding: IncumbentFinding,
+  packageName: string,
 ): boolean {
   if (
     finding.details === null ||
@@ -89,7 +90,7 @@ function evidenceHasFindingTarget(
   }
   const targets = detailStrings(target)
     .filter((value) => value.startsWith("./") && value.length > 2)
-    .map((value) => value.slice(1));
+    .map((value) => `/node_modules/${packageName}${value.slice(1)}`);
   return diagnostic.evidence.split("\n").some((line) =>
     targets.some((target) => {
       let offset = line.indexOf(target);
@@ -118,7 +119,7 @@ function explains(
       return (
         PUBLINT_RUNTIME_CODES.has(finding.code) &&
         (evidenceHasResolutionFailure(diagnostic, packageName) ||
-          evidenceHasFindingTarget(diagnostic, finding))
+          evidenceHasFindingTarget(diagnostic, finding, packageName))
       );
     }
     return (
@@ -134,7 +135,7 @@ function explains(
     return (
       PUBLINT_TYPESCRIPT_CODES.has(finding.code) &&
       (evidenceHasResolutionFailure(diagnostic, packageName) ||
-        evidenceHasFindingTarget(diagnostic, finding))
+        evidenceHasFindingTarget(diagnostic, finding, packageName))
     );
   }
   if (diagnostic.code === "PC1002" && finding.tool === "attw") {
