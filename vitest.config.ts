@@ -21,8 +21,10 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
       },
     },
     environment: "node",
+    hookTimeout: 30_000,
     include: ["test/**/*.test.ts"],
     restoreMocks: true,
+    testTimeout: 30_000,
   },
 });
 

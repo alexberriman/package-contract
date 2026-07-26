@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -85,6 +85,7 @@ describe("TypeScript compiler resolution boundaries", () => {
       { main: "./lib.js", name: "typescript", version: "6.0.0-beta.1" },
       { "lib.js": "module.exports = {};\n" },
     );
+    const canonicalPackagePath = await realpath(packagePath);
     await expect(
       resolveTypeScriptCompiler({
         invokingDirectory: packagePath,
@@ -92,7 +93,7 @@ describe("TypeScript compiler resolution boundaries", () => {
       }),
     ).resolves.toMatchObject({
       kind: "classic",
-      packagePath,
+      packagePath: canonicalPackagePath,
       version: "6.0.0-beta.1",
     });
   });

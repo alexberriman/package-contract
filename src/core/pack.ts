@@ -32,7 +32,7 @@ interface NpmPackResult {
   readonly version: string;
 }
 
-function parsePackResult(stdout: string): NpmPackResult {
+export function parseNpmPackResult(stdout: string): NpmPackResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
@@ -95,7 +95,7 @@ export async function packDirectory(directory: string): Promise<PackArtifact> {
       throw new Error(`npm pack failed with exit code ${result.exitCode}`);
     }
 
-    const packed = parsePackResult(result.stdout);
+    const packed = parseNpmPackResult(result.stdout);
     if (basename(packed.filename) !== packed.filename) {
       throw new Error("npm pack returned an unsafe filename");
     }
