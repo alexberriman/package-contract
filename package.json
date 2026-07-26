@@ -1,6 +1,6 @@
 {
   "name": "package-contract",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Test the npm package your users actually install.",
   "keywords": [
     "npm",
