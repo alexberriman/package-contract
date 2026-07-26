@@ -39,10 +39,15 @@ function parsePackResult(stdout: string): NpmPackResult {
   } catch {
     throw new Error("npm pack did not return valid JSON");
   }
-  if (!Array.isArray(parsed) || parsed.length !== 1) {
+  const results = Array.isArray(parsed)
+    ? parsed
+    : parsed !== null && typeof parsed === "object"
+      ? Object.values(parsed)
+      : [];
+  if (results.length !== 1) {
     throw new Error("npm pack returned an unexpected result count");
   }
-  const result = parsed[0] as Partial<NpmPackResult>;
+  const result = results[0] as Partial<NpmPackResult>;
   if (
     typeof result.filename !== "string" ||
     typeof result.integrity !== "string" ||

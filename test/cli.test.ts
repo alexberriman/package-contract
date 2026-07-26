@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { npmPackFilename } from "./helpers/npm.js";
 
 const execFileAsync = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
@@ -50,8 +51,7 @@ async function packFixture(
     ["pack", "--json", "--pack-destination", destination],
     { cwd: directory },
   );
-  const [result] = JSON.parse(stdout) as [{ filename: string }];
-  return join(destination, basename(result.filename));
+  return join(destination, basename(npmPackFilename(stdout)));
 }
 
 async function runCli(

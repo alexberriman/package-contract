@@ -10,6 +10,7 @@ import type {
   RuntimeActionInput,
 } from "../src/index.js";
 import { testPackage } from "../src/index.js";
+import { npmPackFilename } from "./helpers/npm.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -551,8 +552,7 @@ async function packFixture(fixture: CorpusCase): Promise<string> {
     ["pack", "--ignore-scripts", "--json"],
     { cwd: directory },
   );
-  const [{ filename }] = JSON.parse(stdout);
-  return join(directory, filename);
+  return join(directory, npmPackFilename(stdout));
 }
 
 beforeAll(async () => {

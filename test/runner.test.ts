@@ -17,6 +17,7 @@ import {
   runTypeScriptProbe,
 } from "../src/probes/typescript.js";
 import { resolveTypeScriptCompiler } from "../src/probes/typescript-resolver.js";
+import { npmPackFilename } from "./helpers/npm.js";
 
 const execFileAsync = promisify(execFile);
 let fixtureRoot = "";
@@ -136,8 +137,7 @@ async function makeFixture(
     ["pack", "--ignore-scripts", "--json"],
     { cwd: directory },
   );
-  const [{ filename }] = JSON.parse(stdout) as [{ filename: string }];
-  return join(directory, filename);
+  return join(directory, npmPackFilename(stdout));
 }
 
 beforeAll(async () => {

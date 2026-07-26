@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { materializeReproduction } from "../src/core/reproduction.js";
 import { testPackage } from "../src/index.js";
+import { npmPackFilename } from "./helpers/npm.js";
 
 const execFileAsync = promisify(execFile);
 const node18 = process.env.PACKAGE_CONTRACT_NODE18;
@@ -50,8 +51,7 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
       ["pack", "--ignore-scripts", "--json", "--pack-destination", pack],
       { cwd: root },
     );
-    const [{ filename }] = JSON.parse(stdout) as [{ filename: string }];
-    tarball = join(pack, filename);
+    tarball = join(pack, npmPackFilename(stdout));
   });
 
   afterAll(async () => {

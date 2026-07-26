@@ -77,8 +77,13 @@ try {
       maxBuffer: 16 * 1024 * 1024,
     },
   );
-  const results = JSON.parse(packOutput);
-  if (!Array.isArray(results) || results.length !== 1) {
+  const parsedResults = JSON.parse(packOutput);
+  const results = Array.isArray(parsedResults)
+    ? parsedResults
+    : parsedResults !== null && typeof parsedResults === "object"
+      ? Object.values(parsedResults)
+      : [];
+  if (results.length !== 1) {
     throw new Error("npm pack returned an unexpected result");
   }
   const result = results[0];

@@ -219,7 +219,9 @@ try {
     if (pack.exitCode !== 0) {
       throw new Error(`Packing ${fixture.id} failed:\n${pack.output}`);
     }
-    const [{ filename }] = JSON.parse(pack.output);
+    const parsed = JSON.parse(pack.output);
+    const results = Array.isArray(parsed) ? parsed : Object.values(parsed);
+    const [{ filename }] = results;
     const tarball = join(packRoot, filename);
     const publintResult = run(publint, ["run", tarball], fixtureRoot);
     const attwResult = run(
