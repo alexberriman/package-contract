@@ -671,7 +671,16 @@ export async function testPackage(
                   declaredModuleSystems(artifact.manifest, task.subpath).has(
                     profile.id.moduleSystem,
                   ) &&
-                  declaresTypes(artifact.manifest, task.subpath),
+                  declaresTypes(
+                    artifact.manifest,
+                    task.subpath,
+                    profile.id.moduleSystem,
+                    profile.id.typescriptResolution as
+                      | "bundler"
+                      | "node16"
+                      | "nodenext",
+                    artifact.files.map(({ path }) => path),
+                  ),
               )
               .map(({ subpath }) => ({ profile, subpath })),
           ).then(
@@ -701,7 +710,15 @@ export async function testPackage(
                 actions.filter((action) => action.subpath === subpath),
               );
             }
-            if (!declaresTypes(artifact.manifest, subpath)) {
+            if (
+              !declaresTypes(
+                artifact.manifest,
+                subpath,
+                profile.id.moduleSystem,
+                profile.id.typescriptResolution,
+                artifact.files.map(({ path }) => path),
+              )
+            ) {
               return notEvaluated(
                 profile,
                 subpath,

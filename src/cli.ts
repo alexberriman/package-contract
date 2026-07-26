@@ -44,6 +44,19 @@ function hasIncompleteEvaluation(
   );
 }
 
+function hasResidualError(
+  results: Awaited<ReturnType<typeof testPackage>>["results"],
+): boolean {
+  return results.some(
+    (result) =>
+      result.state === "fail" &&
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.severity === "error" && diagnostic.explainedBy === null,
+      ),
+  );
+}
+
 function parseReporter(json: boolean | undefined, value: string | undefined): Reporter {
   if (json === true && value !== undefined && value !== "json") {
     throw new Error("--json cannot be combined with a non-JSON reporter");
@@ -168,7 +181,7 @@ async function main(): Promise<void> {
         `Reproduction written to repros/${reproduction.diagnosticId}\n`,
       );
     }
-    if (report.diagnostics.some(({ severity }) => severity === "error")) {
+    if (hasResidualError(report.results)) {
       process.exitCode = 1;
     } else if (hasIncompleteEvaluation(report.results)) {
       process.exitCode = 2;

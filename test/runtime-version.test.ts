@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { materializeReproduction } from "../src/core/reproduction.js";
 import { testPackage } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
@@ -87,6 +88,32 @@ describe.skipIf(node18 === undefined)("Node 18 runtime boundary", () => {
         subpath: "./bin/node-floor",
       }),
     ]);
+    for (const diagnostic of oldRuntime.diagnostics) {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: join(root, "repros"),
+        report: oldRuntime,
+        tarballPath: tarball,
+      });
+      await execFileAsync(
+        "npm",
+        ["ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: reproduction.path },
+      );
+      const entry = reproduction.files.find((file) => file.startsWith("probe"));
+      if (entry === undefined) {
+        throw new Error("expected a reproduction entrypoint");
+      }
+      await expect(
+        execFileAsync(node18, [entry], { cwd: reproduction.path }),
+      ).rejects.toMatchObject({ code: 1 });
+      await expect(
+        execFileAsync(process.execPath, [entry], { cwd: reproduction.path }),
+      ).rejects.toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining("requires Node 18.20.8"),
+      });
+    }
 
     const currentRuntime = await testPackage(
       { kind: "tarball", path: tarball },

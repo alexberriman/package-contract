@@ -126,4 +126,110 @@ describe("incumbent suppression", () => {
     }
     expect(result.diagnostics[0]?.explainedBy).toBeNull();
   });
+
+  it("does not mistake a finding subpath or target prefix for causality", () => {
+    const unrelated = {
+      ...diagnostic,
+      code: "PC1001",
+      evidence:
+        "Error: ENOENT: no such file or directory, open '<consumer>/node_modules/example/feature-data.json'",
+    };
+    const result = applyIncumbentExplanations(
+      {
+        diagnostics: [unrelated],
+        profile: unrelated.profile,
+        state: "fail",
+        subpath: unrelated.subpath,
+      },
+      [
+        finding({
+          code: "FILE_DOES_NOT_EXIST",
+          details: {
+            path: ["exports", "./feature", "import"],
+            target: "./feature",
+          },
+          tool: "publint",
+        }),
+      ],
+      "example",
+    );
+
+    expect(result.state).toBe("fail");
+    if (result.state !== "fail") {
+      throw new Error("expected a failed result");
+    }
+    expect(result.diagnostics[0]?.explainedBy).toBeNull();
+  });
+
+  it("matches only exact nested Publint targets", () => {
+    const runtime = {
+      ...diagnostic,
+      code: "PC1001",
+      evidence:
+        "Error: Cannot find module '<consumer>/node_modules/example/missing.js'",
+      subpath: ".",
+    };
+    const result = applyIncumbentExplanations(
+      {
+        diagnostics: [runtime],
+        profile: runtime.profile,
+        state: "fail",
+        subpath: runtime.subpath,
+      },
+      [
+        finding({
+          code: "FILE_DOES_NOT_EXIST",
+          details: {
+            target: {
+              import: [null, "./missing.js"],
+            },
+          },
+          subpath: ".",
+          tool: "publint",
+        }),
+      ],
+      "example",
+    );
+
+    expect(result.state).toBe("fail");
+    if (result.state !== "fail") {
+      throw new Error("expected a failed result");
+    }
+    expect(result.diagnostics[0]?.explainedBy).toEqual(["publint:FILE_DOES_NOT_EXIST"]);
+  });
+
+  it.each([null, [], { path: ["exports", "."] }])(
+    "ignores a Publint finding without a concrete target: %j",
+    (details) => {
+      const runtime = {
+        ...diagnostic,
+        code: "PC1001",
+        evidence: "Error: no such file or directory, open '/missing.js'",
+        subpath: ".",
+      };
+      const result = applyIncumbentExplanations(
+        {
+          diagnostics: [runtime],
+          profile: runtime.profile,
+          state: "fail",
+          subpath: runtime.subpath,
+        },
+        [
+          finding({
+            code: "FILE_DOES_NOT_EXIST",
+            details,
+            subpath: ".",
+            tool: "publint",
+          }),
+        ],
+        "example",
+      );
+
+      expect(result.state).toBe("fail");
+      if (result.state !== "fail") {
+        throw new Error("expected a failed result");
+      }
+      expect(result.diagnostics[0]?.explainedBy).toBeNull();
+    },
+  );
 });

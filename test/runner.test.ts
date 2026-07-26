@@ -28,8 +28,11 @@ let dualTarball = "";
 let patternTarball = "";
 let unsafePatternTarball = "";
 let untypedTarball = "";
+let unreachableTypesTarball = "";
+let legacyPrivateTarball = "";
 let installationFailureTarball = "";
 let explainedTarball = "";
+let ambiguousExplainedTarball = "";
 let comparisonBeforeTarball = "";
 let comparisonAfterTarball = "";
 let comparisonDriftBeforeTarball = "";
@@ -227,6 +230,31 @@ beforeAll(async () => {
       files: ["index.js"],
     },
   );
+  unreachableTypesTarball = await makeFixture(
+    "package-contract-unreachable-types-fixture",
+    "export const value = 42;\n",
+    {},
+    {},
+    {
+      exports: {
+        ".": {
+          browser: { types: "./missing-browser.d.ts" },
+          import: "./index.js",
+        },
+      },
+      files: ["index.js"],
+    },
+  );
+  legacyPrivateTarball = await makeFixture(
+    "package-contract-legacy-private-fixture",
+    "export const value = 42;\n",
+    { "private.js": "export const hidden = true;\n" },
+    {},
+    {
+      exports: undefined,
+      files: ["index.js", "index.d.ts", "private.js"],
+    },
+  );
   installationFailureTarball = await makeFixture(
     "package-contract-installation-failure-fixture",
     "export const value = 42;\n",
@@ -248,6 +276,24 @@ beforeAll(async () => {
           import: "./missing.js",
         },
       },
+    },
+  );
+  ambiguousExplainedTarball = await makeFixture(
+    "package-contract-ambiguous-explanation-fixture",
+    "export const value = 42;\n",
+    {
+      "feature.js":
+        "import { readFileSync } from 'node:fs';\nreadFileSync(new URL('./feature-data.json', import.meta.url));\n",
+    },
+    {},
+    {
+      exports: {
+        ".": {
+          types: "./feature",
+          import: "./feature.js",
+        },
+      },
+      files: ["feature.js"],
     },
   );
   comparisonBeforeTarball = await makeFixture(
@@ -849,6 +895,49 @@ describe("testPackage", () => {
     }
   });
 
+  it("materializes and executes the private-import reproduction contract", async () => {
+    const report = await testPackage({
+      kind: "tarball",
+      path: legacyPrivateTarball,
+    });
+    const diagnostic = createDiagnostic({
+      code: "PC1003",
+      command: "node <consumer>/probe.mjs",
+      evidence: "Private deep import evaluated successfully.",
+      explainedBy: null,
+      profile: {
+        moduleSystem: "esm",
+        runtime: process.versions.node,
+        typescriptResolution: null,
+      },
+      reproducible: true,
+      severity: "error",
+      subpath: "./private.js",
+      title: "Private deep import was not blocked",
+    });
+    const root = await mkdtemp(join(tmpdir(), "package-contract-private-repro-"));
+    try {
+      const reproduction = await materializeReproduction({
+        diagnosticId: diagnostic.id,
+        outputRoot: root,
+        report: { ...report, diagnostics: [diagnostic] },
+        tarballPath: legacyPrivateTarball,
+      });
+      await execFileAsync(
+        "npm",
+        ["install", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: reproduction.path },
+      );
+      await expect(
+        execFileAsync("npm", ["run", "reproduce"], {
+          cwd: reproduction.path,
+        }),
+      ).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("rejects host-specific values from a generated reproduction", async () => {
     const report = await testPackage({ kind: "tarball", path: badTarball });
     const diagnostic = report.diagnostics[0];
@@ -909,6 +998,34 @@ describe("testPackage", () => {
       attw: "0.18.5",
       publint: "0.3.22",
     });
+  });
+
+  it("keeps a same-prefix runtime failure residual beside an incumbent issue", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: ambiguousExplainedTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+          },
+        ],
+      },
+    );
+
+    expect(report.incumbentFindings).toContainEqual(
+      expect.objectContaining({
+        code: "FILE_DOES_NOT_EXIST",
+        tool: "publint",
+      }),
+    );
+    expect(report.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "PC1001",
+        evidence: expect.stringContaining("feature-data.json"),
+        explainedBy: null,
+      }),
+    ]);
   });
 
   it("runs explicit export and function-call consumer actions", async () => {
@@ -1393,6 +1510,29 @@ describe("testPackage", () => {
         .filter(({ profile }) => profile.typescriptResolution !== null)
         .every(({ state }) => state === "not-evaluated"),
     ).toBe(true);
+  });
+
+  it("does not claim declarations hidden under unavailable conditions", async () => {
+    const report = await testPackage(
+      { kind: "tarball", path: unreachableTypesTarball },
+      {
+        profiles: [
+          {
+            moduleSystem: "esm",
+            runtime: { version: process.version },
+            typescriptResolution: "nodenext",
+          },
+        ],
+      },
+    );
+
+    expect(report.diagnostics).toEqual([]);
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: "inapplicable-profile" }),
+        state: "not-evaluated",
+      }),
+    ]);
   });
 
   it("limits explicit profiles to their requested subpaths", async () => {

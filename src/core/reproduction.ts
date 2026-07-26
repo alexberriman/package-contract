@@ -49,6 +49,10 @@ function entryFile(diagnostic: Diagnostic): string {
 function entrySource(diagnostic: Diagnostic, report: PackageReport): string {
   const packageName = report.package.name;
   const specifier = packageSpecifier(packageName, diagnostic.subpath);
+  const runtimeGuard = `if (process.versions.node !== ${JSON.stringify(diagnostic.profile.runtime)}) {
+  throw new Error(${JSON.stringify(`This reproduction requires Node ${diagnostic.profile.runtime}.`)});
+}
+`;
   if (diagnostic.code === "PC1000") {
     return "throw new Error('Run npm run reproduce to retry consumer installation.');\n";
   }
@@ -62,7 +66,7 @@ function entrySource(diagnostic: Diagnostic, report: PackageReport): string {
     if (bin === undefined) {
       throw new Error("executable action is missing from the report");
     }
-    return `import { spawnSync } from "node:child_process";\nimport { fileURLToPath } from "node:url";\nconst executable = fileURLToPath(new URL(${JSON.stringify(`./node_modules/.bin/${bin.name}`)}, import.meta.url));\nconst result = spawnSync(executable, ${JSON.stringify(bin.arguments)}, { stdio: "inherit" });\nprocess.exitCode = result.status ?? 1;\n`;
+    return `import { spawnSync } from "node:child_process";\nimport { fileURLToPath } from "node:url";\n${runtimeGuard}const executable = fileURLToPath(new URL(${JSON.stringify(`./node_modules/.bin/${bin.name}`)}, import.meta.url));\nconst result = spawnSync(process.execPath, [executable, ...${JSON.stringify(bin.arguments)}], { stdio: "inherit" });\nprocess.exitCode = result.status ?? 1;\n`;
   }
   if (diagnostic.code === "PC1003") {
     const failure = "Private deep import evaluated successfully.";
@@ -70,14 +74,14 @@ function entrySource(diagnostic: Diagnostic, report: PackageReport): string {
       diagnostic.profile.moduleSystem === "esm"
         ? `await import(${JSON.stringify(specifier)});`
         : `require(${JSON.stringify(specifier)});`;
-    return `try {\n  ${load}\n  throw new Error(${JSON.stringify(failure)});\n} catch (error) {\n  if (error instanceof Error && error.message === ${JSON.stringify(failure)}) throw error;\n  if (!(error && typeof error === "object" && "code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED")) throw error;\n}\n`;
+    return `${runtimeGuard}try {\n  ${load}\n  throw new Error(${JSON.stringify(failure)});\n} catch (error) {\n  if (error instanceof Error && error.message === ${JSON.stringify(failure)}) throw error;\n  if (!(error && typeof error === "object" && "code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED")) throw error;\n}\n`;
   }
-  return runtimeProbeSource(
+  return `${runtimeGuard}${runtimeProbeSource(
     packageName,
     diagnostic.profile.moduleSystem,
     diagnostic.subpath,
     report.actions.filter(({ subpath }) => subpath === diagnostic.subpath),
-  );
+  )}`;
 }
 
 function reproductionCommand(diagnostic: Diagnostic, report: PackageReport): string {
@@ -210,7 +214,7 @@ export async function materializeReproduction(
       }),
       writeFile(
         join(stagingPath, "README.md"),
-        `# Reproduction ${diagnostic.id}\n\nRun:\n\n\`\`\`sh\n${lockfile === null ? "npm install" : "npm ci"} --ignore-scripts --no-audit --no-fund\nnpm run reproduce\n\`\`\`\n`,
+        `# Reproduction ${diagnostic.id}\n\nRequired runtime: Node ${diagnostic.profile.runtime}\n\nRun:\n\n\`\`\`sh\n${lockfile === null ? "npm install" : "npm ci"} --ignore-scripts --no-audit --no-fund\nnpm run reproduce\n\`\`\`\n`,
         { mode: 0o600 },
       ),
       ...(lockfile === null

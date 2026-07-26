@@ -241,22 +241,131 @@ describe("declaredModuleSystems", () => {
 });
 
 describe("declaresTypes", () => {
-  it("recognizes legacy fields, nested conditions, and arrays", () => {
-    expect(declaresTypes(manifest({ types: "./index.d.ts" }), ".")).toBe(true);
-    expect(declaresTypes(manifest({ typings: "./index.d.ts" }), ".")).toBe(true);
-    expect(declaresTypes(manifest({ types: "./index.d.ts" }), "./feature")).toBe(false);
+  it("recognizes legacy fields and reachable types conditions", () => {
+    expect(
+      declaresTypes(manifest({ types: "./index.d.ts" }), ".", "esm", "nodenext"),
+    ).toBe(true);
+    expect(
+      declaresTypes(manifest({ typings: "./index.d.ts" }), ".", "esm", "nodenext"),
+    ).toBe(true);
+    expect(
+      declaresTypes(
+        manifest({ types: "./index.d.ts" }),
+        "./feature",
+        "esm",
+        "nodenext",
+      ),
+    ).toBe(false);
     expect(
       declaresTypes(
         manifest({
           exports: {
-            ".": [{ import: "./index.js" }, { custom: { types: "./index.d.ts" } }],
+            ".": { types: "./index.d.ts", import: "./index.js" },
           },
         }),
         ".",
+        "esm",
+        "nodenext",
       ),
     ).toBe(true);
     expect(
-      declaresTypes(manifest({ exports: { ".": { import: "./index.js" } } }), "."),
+      declaresTypes(
+        manifest({ exports: { ".": { import: "./index.js" } } }),
+        ".",
+        "esm",
+        "nodenext",
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores types under unavailable or shadowed conditions", () => {
+    for (const exports of [
+      {
+        ".": {
+          browser: { types: "./browser.d.ts" },
+          import: "./index.js",
+        },
+      },
+      {
+        ".": {
+          custom: { types: "./custom.d.ts" },
+          default: "./index.js",
+        },
+      },
+      {
+        ".": {
+          import: "./index.js",
+          types: "./shadowed.d.ts",
+        },
+      },
+    ]) {
+      expect(declaresTypes(manifest({ exports }), ".", "esm", "nodenext")).toBe(false);
+    }
+  });
+
+  it("recognizes a declaration sibling selected through a runtime condition", () => {
+    expect(
+      declaresTypes(
+        manifest({
+          exports: {
+            ".": {
+              import: "./index.js",
+              types: "./shadowed.d.ts",
+            },
+          },
+        }),
+        ".",
+        "esm",
+        "nodenext",
+        ["index.js", "index.d.ts"],
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["./index.mjs", "index.d.mts"],
+    ["./index.cjs", "index.d.cts"],
+    ["./index.js", "index.d.ts"],
+  ])("maps %s to its packed declaration sibling", (target, declaration) => {
+    expect(
+      declaresTypes(
+        manifest({
+          exports: {
+            ".": [
+              null,
+              {
+                browser: "./browser.js",
+                default: target,
+              },
+            ],
+          },
+        }),
+        ".",
+        "cjs",
+        "node16",
+        [target.slice(2), declaration],
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects selected targets without a declaration file mapping", () => {
+    expect(
+      declaresTypes(
+        manifest({ exports: { ".": { default: "./metadata.json" } } }),
+        ".",
+        "esm",
+        "bundler",
+        ["metadata.json"],
+      ),
+    ).toBe(false);
+    expect(
+      declaresTypes(
+        manifest({ exports: { ".": [null, { browser: "./browser.js" }] } }),
+        ".",
+        "esm",
+        "nodenext",
+        ["browser.d.ts"],
+      ),
     ).toBe(false);
   });
 });

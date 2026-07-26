@@ -76,9 +76,33 @@ function evidenceHasFindingTarget(
   diagnostic: Diagnostic,
   finding: IncumbentFinding,
 ): boolean {
-  return detailStrings(finding.details)
+  if (
+    finding.details === null ||
+    Array.isArray(finding.details) ||
+    typeof finding.details !== "object"
+  ) {
+    return false;
+  }
+  const target = (finding.details as { readonly [key: string]: JsonValue }).target;
+  if (target === undefined) {
+    return false;
+  }
+  const targets = detailStrings(target)
     .filter((value) => value.startsWith("./") && value.length > 2)
-    .some((value) => diagnostic.evidence.includes(value.slice(1)));
+    .map((value) => value.slice(1));
+  return diagnostic.evidence.split("\n").some((line) =>
+    targets.some((target) => {
+      let offset = line.indexOf(target);
+      while (offset !== -1) {
+        const next = line[offset + target.length];
+        if (next === undefined || /['"\s):?#]/.test(next)) {
+          return true;
+        }
+        offset = line.indexOf(target, offset + 1);
+      }
+      return false;
+    }),
+  );
 }
 
 function explains(

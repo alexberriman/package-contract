@@ -124,19 +124,73 @@ export function declaredModuleSystems(
   return systems;
 }
 
-function containsTypesCondition(target: JsonValue): boolean {
+function targetDeclaresTypes(
+  target: JsonValue,
+  conditions: ReadonlySet<string>,
+): boolean {
+  if (typeof target === "string" && /\.d\.(?:cts|mts|ts)$/i.test(target)) {
+    return true;
+  }
   if (Array.isArray(target)) {
-    return target.some(containsTypesCondition);
+    return target.some((entry) => targetDeclaresTypes(entry, conditions));
   }
   if (isRecord(target)) {
-    return Object.entries(target).some(
-      ([key, value]) => key === "types" || containsTypesCondition(value),
-    );
+    for (const [key, value] of Object.entries(target)) {
+      if (key === "types") {
+        return true;
+      }
+      if (key === "default" || conditions.has(key)) {
+        return targetDeclaresTypes(value, conditions);
+      }
+    }
   }
   return false;
 }
 
-export function declaresTypes(manifest: PackageManifest, subpath: string): boolean {
+function selectedStringTarget(
+  target: JsonValue,
+  conditions: ReadonlySet<string>,
+): string | null {
+  if (typeof target === "string") {
+    return target;
+  }
+  if (Array.isArray(target)) {
+    for (const entry of target) {
+      const selected = selectedStringTarget(entry, conditions);
+      if (selected !== null) {
+        return selected;
+      }
+    }
+  } else if (isRecord(target)) {
+    for (const [key, value] of Object.entries(target)) {
+      if (key === "default" || key === "types" || conditions.has(key)) {
+        return selectedStringTarget(value, conditions);
+      }
+    }
+  }
+  return null;
+}
+
+function declarationSibling(target: string): string | null {
+  if (target.endsWith(".mjs")) {
+    return `${target.slice(0, -4)}.d.mts`;
+  }
+  if (target.endsWith(".cjs")) {
+    return `${target.slice(0, -4)}.d.cts`;
+  }
+  if (target.endsWith(".js")) {
+    return `${target.slice(0, -3)}.d.ts`;
+  }
+  return null;
+}
+
+export function declaresTypes(
+  manifest: PackageManifest,
+  subpath: string,
+  moduleSystem: "cjs" | "esm",
+  typescriptResolution: "bundler" | "node16" | "nodenext",
+  packedFiles: readonly string[] = [],
+): boolean {
   const exports = manifest.exports;
   if (exports === undefined) {
     return (
@@ -148,7 +202,24 @@ export function declaresTypes(manifest: PackageManifest, subpath: string): boole
   if (isRecord(exports) && Object.keys(exports).some((key) => key.startsWith("."))) {
     target = targetForSubpath(exports, subpath);
   }
-  return containsTypesCondition(target);
+  const conditions =
+    typescriptResolution === "bundler"
+      ? new Set(["import"])
+      : new Set([
+          "module-sync",
+          "node",
+          "node-addons",
+          moduleSystem === "esm" ? "import" : "require",
+        ]);
+  if (targetDeclaresTypes(target, conditions)) {
+    return true;
+  }
+  const selected = selectedStringTarget(target, conditions);
+  const sibling = selected === null ? null : declarationSibling(selected);
+  return (
+    sibling !== null &&
+    packedFiles.includes(sibling.startsWith("./") ? sibling.slice(2) : sibling)
+  );
 }
 
 function collectStringTargets(target: JsonValue, targets: Set<string>): void {
