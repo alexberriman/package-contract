@@ -43,6 +43,8 @@ jobs:
         run: npm run format:check
       - name: Check types
         run: npm run typecheck
+      - name: Check dead code
+        run: npm run deadcode
       - name: Run unit and integration tests
         run: npm run test:unit
       - name: Build package
@@ -106,29 +108,5 @@ jobs:
         run: npm install --global npm@12.0.1
       - name: Install dependencies
         run: npm ci
-      - name: Enforce coverage
-        run: npm run test:coverage
-      - name: Build and capture the exact tarball
-        id: pack
-        shell: bash
-        run: |
-          npm pack --json > pack-result.json
-          tarball="$(node -e "const fs=require('node:fs'); const [result]=JSON.parse(fs.readFileSync('pack-result.json','utf8')); process.stdout.write(result.filename)")"
-          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
-      - name: Run Publint
-        run: npx --no-install publint "${{ steps.pack.outputs.tarball }}"
-      - name: Run Are the Types Wrong
-        run: npx --no-install attw --pack "${{ steps.pack.outputs.tarball }}" --profile esm-only
-      - name: Run package-contract against itself
-        run: node dist/cli.js check "${{ steps.pack.outputs.tarball }}"
-      - name: Prove a clean consumer install
-        shell: bash
-        run: |
-          consumer="$(mktemp -d)"
-          npm install "$PWD/${{ steps.pack.outputs.tarball }}" --prefix "$consumer" --ignore-scripts --no-audit --no-fund
-          cd "$consumer"
-          node --input-type=module -e "await import('package-contract')"
-      - name: Audit production dependencies
-        run: npm audit --omit=dev
-      - name: Audit production licenses
-        run: npm run audit:licenses
+      - name: Prepare and verify exact release artifact
+        run: npm run release:prepare
