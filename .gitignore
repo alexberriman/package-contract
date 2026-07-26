@@ -15,6 +15,7 @@ CLAUDE.md
 .env
 .env.*
 !.env.example
+.envrc
 
 # Editor and operating system files
 .idea/
