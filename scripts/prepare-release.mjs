@@ -162,7 +162,64 @@ try {
     );
     run(
       "node",
-      ["--input-type=module", "-e", "await import('package-contract')"],
+      [
+        "--input-type=module",
+        "-e",
+        `const subject = await import("package-contract");
+const actual = Object.keys(subject).sort();
+const expected = ["comparePackages", "defineConsumer", "testPackage"];
+if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  throw new Error(\`unexpected public exports: \${actual.join(", ")}\`);
+}
+try {
+  await import("package-contract/core/test-package.js");
+  throw new Error("internal module was publicly importable");
+} catch (error) {
+  if (!(error && typeof error === "object" && "code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED")) {
+    throw error;
+  }
+}`,
+      ],
+      consumer,
+    );
+    await writeFile(
+      join(consumer, "consumer.mts"),
+      `import {
+  comparePackages,
+  defineConsumer,
+  testPackage,
+  type PackageReport,
+  type TestPackageOptions,
+} from "package-contract";
+
+const profile = defineConsumer({
+  moduleSystem: "esm",
+  runtime: { version: "24.0.0" },
+});
+const options = { profiles: [profile] } satisfies TestPackageOptions;
+const report: Promise<PackageReport> = testPackage(
+  { kind: "directory", path: "." },
+  options,
+);
+void comparePackages;
+void report;
+`,
+      { mode: 0o600 },
+    );
+    run(
+      process.execPath,
+      [
+        join(root, "node_modules", "typescript", "bin", "tsc"),
+        "--module",
+        "nodenext",
+        "--moduleResolution",
+        "nodenext",
+        "--noEmit",
+        "--strict",
+        "--target",
+        "es2022",
+        "consumer.mts",
+      ],
       consumer,
     );
   } finally {

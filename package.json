@@ -72,7 +72,7 @@
     "release:publish": "node scripts/publish-release.mjs",
     "test": "vitest run",
     "test:corpus": "vitest run test/corpus.test.ts",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
     "test:runtime-version": "vitest run test/runtime-version.test.ts",
     "test:unit": "vitest run --exclude test/corpus.test.ts",
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"

@@ -1,6 +1,9 @@
 import type { Diagnostic } from "../core/diagnostic.js";
 import type { PackageReport } from "../core/report.js";
 
+const ANNOTATION_LIMIT = 50;
+const REPORT_LIMIT_BYTES = 256 * 1024;
+
 function escapeData(value: string): string {
   return value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
 }
@@ -30,5 +33,23 @@ export function renderGitHubReport(report: PackageReport): string {
   if (report.diagnostics.length === 0) {
     return "";
   }
-  return `${report.diagnostics.map(annotation).join("\n")}\n`;
+  const lines: string[] = [];
+  let bytes = 0;
+  for (const diagnostic of report.diagnostics.slice(0, ANNOTATION_LIMIT)) {
+    const line = annotation(diagnostic);
+    const lineBytes = Buffer.byteLength(`${line}\n`);
+    if (bytes + lineBytes > REPORT_LIMIT_BYTES) {
+      break;
+    }
+    lines.push(line);
+    bytes += lineBytes;
+  }
+  const omitted = report.diagnostics.length - lines.length;
+  if (omitted > 0) {
+    const summary = `package-contract omitted ${omitted} additional annotation${omitted === 1 ? "" : "s"} from workflow output; use the JSON reporter for the complete result.`;
+    if (bytes + Buffer.byteLength(`${summary}\n`) <= REPORT_LIMIT_BYTES) {
+      lines.push(summary);
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }

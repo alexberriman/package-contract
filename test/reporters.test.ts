@@ -34,10 +34,10 @@ function report(withDiagnostic = true): PackageReport {
     diagnostics: withDiagnostic ? [diagnostic] : [],
     environment: {
       architecture: "arm64",
-      node: "24.16.0",
       npm: "12.0.1",
       platform: "darwin",
       profileSchema: 1,
+      runnerNode: "24.16.0",
       typescript: "7.0.2",
     },
     incumbentFindings: [],
@@ -175,6 +175,25 @@ describe("reporters", () => {
     expect(renderGitHubReport(report())).toBe(
       "::error title=PC1001 Package evaluation failed,file=package.json,line=2,col=3,endLine=2,endColumn=8::.: first line%0A100%25: second,line\n",
     );
+  });
+
+  it("bounds GitHub annotation count and reports omissions", () => {
+    const base = report();
+    const diagnostic = base.diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("expected a diagnostic");
+    }
+    const diagnostics = Array.from({ length: 60 }, (_, index) => ({
+      ...diagnostic,
+      id: index.toString(16).padStart(16, "0"),
+    }));
+    const output = renderGitHubReport({ ...base, diagnostics });
+
+    expect(output.match(/^::error /gm)).toHaveLength(50);
+    expect(output).toContain(
+      "package-contract omitted 10 additional annotations from workflow output",
+    );
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(256 * 1024);
   });
 
   it("renders annotations without optional source positions", () => {

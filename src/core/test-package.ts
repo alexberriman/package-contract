@@ -50,6 +50,7 @@ import { compareCodeUnits } from "./order.js";
 import { type PackArtifact, packDirectory } from "./pack.js";
 import { resolvePackageInput } from "./package-input.js";
 import type { PackageReport, RuntimePlatform } from "./report.js";
+import { registerReproductionLockfile } from "./reproduction-state.js";
 import type { ProbeResult } from "./result.js";
 import { detectExecutableVersion } from "./runtime.js";
 import { inspectTarball } from "./tarball.js";
@@ -774,16 +775,16 @@ export async function testPackage(
           )
           .sort(compareDiagnostics),
       );
-      return Object.freeze({
+      const report = Object.freeze({
         actions,
         bins,
         diagnostics,
         environment: Object.freeze({
           architecture: process.arch,
-          node: currentRuntimeVersion,
           npm: npmVersion,
           platform: process.platform as RuntimePlatform,
           profileSchema: 1,
+          runnerNode: currentRuntimeVersion,
           typescript: compiler?.version ?? null,
         }),
         incumbentFindings: incumbents.findings,
@@ -797,6 +798,8 @@ export async function testPackage(
         results: sortedResults,
         tools: incumbents.tools,
       });
+      registerReproductionLockfile(report, consumer.lockfile);
+      return report;
     } finally {
       await consumer.cleanup();
     }

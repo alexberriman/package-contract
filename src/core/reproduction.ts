@@ -17,6 +17,7 @@ import { runtimeProbeSource } from "./consumer.js";
 import type { Diagnostic } from "./diagnostic.js";
 import { hashFile } from "./hash.js";
 import type { PackageReport } from "./report.js";
+import { reproductionLockfile } from "./reproduction-state.js";
 
 export interface MaterializeReproductionOptions {
   readonly diagnosticId: string;
@@ -79,26 +80,64 @@ function entrySource(diagnostic: Diagnostic, report: PackageReport): string {
   );
 }
 
+function reproductionCommand(diagnostic: Diagnostic, report: PackageReport): string {
+  if (diagnostic.code === "PC1000") {
+    return "npm install --ignore-scripts --no-audit --no-fund";
+  }
+  if (diagnostic.code === "PC1002") {
+    if (report.environment.typescript === null) {
+      throw new Error("TypeScript reproduction is missing its compiler version");
+    }
+    return `npx --yes --package=typescript@${report.environment.typescript} tsc --noEmit -p tsconfig.json`;
+  }
+  return `node ${entryFile(diagnostic)}`;
+}
+
 function reproductionPackage(diagnostic: Diagnostic, report: PackageReport): object {
-  const typescript =
-    diagnostic.code === "PC1002" && report.environment.typescript !== null
-      ? { devDependencies: { typescript: report.environment.typescript } }
-      : {};
   return {
     dependencies: { [report.package.name]: "file:./package.tgz" },
-    ...typescript,
     name: `package-contract-repro-${diagnostic.id}`,
     private: true,
     scripts: {
-      reproduce:
-        diagnostic.code === "PC1000"
-          ? "npm install --ignore-scripts --no-audit --no-fund"
-          : diagnostic.code === "PC1002"
-            ? "tsc --noEmit -p tsconfig.json"
-            : `node ${entryFile(diagnostic)}`,
+      reproduce: reproductionCommand(diagnostic, report),
     },
     type: diagnostic.profile.moduleSystem === "esm" ? "module" : "commonjs",
   };
+}
+
+function lockfileForReproduction(
+  report: PackageReport,
+  diagnostic: Diagnostic,
+): string | null {
+  const captured = reproductionLockfile(report);
+  if (captured === null || diagnostic.code === "PC1000") {
+    return null;
+  }
+  const lockfile = JSON.parse(captured) as {
+    name?: string;
+    packages?: Record<
+      string,
+      {
+        dependencies?: Record<string, string>;
+        name?: string;
+        resolved?: string;
+      }
+    >;
+  };
+  const name = `package-contract-repro-${diagnostic.id}`;
+  lockfile.name = name;
+  const root = lockfile.packages?.[""];
+  if (root !== undefined) {
+    root.name = name;
+    if (root.dependencies?.[report.package.name] !== undefined) {
+      root.dependencies[report.package.name] = "file:./package.tgz";
+    }
+  }
+  const installed = lockfile.packages?.[`node_modules/${report.package.name}`];
+  if (installed?.resolved !== undefined) {
+    installed.resolved = "file:package.tgz";
+  }
+  return `${JSON.stringify(lockfile, null, 2)}\n`;
 }
 
 function tsconfig(diagnostic: Diagnostic): object | null {
@@ -151,11 +190,13 @@ export async function materializeReproduction(
 
     const entry = entryFile(diagnostic);
     const config = tsconfig(diagnostic);
+    const lockfile = lockfileForReproduction(options.report, diagnostic);
     const files = [
       "README.md",
       entry,
       "package.json",
       "package.tgz",
+      ...(lockfile === null ? [] : ["package-lock.json"]),
       ...(config === null ? [] : ["tsconfig.json"]),
     ].sort();
     await Promise.all([
@@ -169,9 +210,16 @@ export async function materializeReproduction(
       }),
       writeFile(
         join(stagingPath, "README.md"),
-        `# Reproduction ${diagnostic.id}\n\nRun:\n\n\`\`\`sh\nnpm install --ignore-scripts --no-audit --no-fund\nnpm run reproduce\n\`\`\`\n`,
+        `# Reproduction ${diagnostic.id}\n\nRun:\n\n\`\`\`sh\n${lockfile === null ? "npm install" : "npm ci"} --ignore-scripts --no-audit --no-fund\nnpm run reproduce\n\`\`\`\n`,
         { mode: 0o600 },
       ),
+      ...(lockfile === null
+        ? []
+        : [
+            writeFile(join(stagingPath, "package-lock.json"), lockfile, {
+              mode: 0o600,
+            }),
+          ]),
       ...(config === null
         ? []
         : [

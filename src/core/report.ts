@@ -17,10 +17,10 @@ export type RuntimePlatform =
 
 export interface ReportEnvironment {
   readonly architecture: string;
-  readonly node: string;
   readonly npm: string;
   readonly platform: RuntimePlatform;
   readonly profileSchema: 1;
+  readonly runnerNode: string;
   readonly typescript: string | null;
 }
 

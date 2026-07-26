@@ -75,6 +75,10 @@ Each result is exactly one of `pass`, `fail`, or `not-evaluated`.
 missing compiler, unavailable runtime, cache miss, unsafe wildcard, or resource
 limit. It is never evidence of compatibility.
 
+`environment.runnerNode` records the process orchestrating the check. Each
+result profile separately records the runtime version that actually executed
+that probe.
+
 ## `comparePackages`
 
 ```ts

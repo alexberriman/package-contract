@@ -663,15 +663,22 @@ describe("testPackage", () => {
 
       expect(reproduction.files).toEqual([
         "README.md",
+        "package-lock.json",
         "package.json",
         "package.tgz",
         "probe.mjs",
       ]);
       const manifest = await readFile(join(reproduction.path, "package.json"), "utf8");
+      const lockfile = await readFile(
+        join(reproduction.path, "package-lock.json"),
+        "utf8",
+      );
       expect(manifest).not.toContain(fixtureRoot);
+      expect(lockfile).not.toContain(fixtureRoot);
+      expect(lockfile).toContain('"file:./package.tgz"');
       await execFileAsync(
         "npm",
-        ["install", "--ignore-scripts", "--no-audit", "--no-fund"],
+        ["ci", "--ignore-scripts", "--no-audit", "--no-fund"],
         { cwd: reproduction.path },
       );
       await expect(
@@ -766,6 +773,7 @@ describe("testPackage", () => {
       });
       expect(reproduction.files).toEqual([
         "README.md",
+        "package-lock.json",
         "package.json",
         "package.tgz",
         "probe.mts",
@@ -781,6 +789,16 @@ describe("testPackage", () => {
         },
         files: ["./probe.mts"],
       });
+      await execFileAsync(
+        "npm",
+        ["ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: reproduction.path },
+      );
+      await expect(
+        execFileAsync("npm", ["run", "reproduce"], {
+          cwd: reproduction.path,
+        }),
+      ).rejects.toMatchObject({ code: 1 });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

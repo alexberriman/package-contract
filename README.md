@@ -33,7 +33,7 @@ immutable tarball ──► isolated npm install
                           │
                           ├─ real Node.js imports and requires
                           ├─ real TypeScript compiler API
-                          ├─ every declared export subpath
+                          ├─ every safely enumerable public entrypoint
                           └─ explicit API, asset, lazy import, and bin actions
 ```
 
