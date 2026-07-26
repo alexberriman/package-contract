@@ -7,7 +7,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { installConsumer, runRootEsmConsumer } from "../src/core/consumer.js";
 import { createDiagnostic } from "../src/core/diagnostic.js";
-import { packDirectory } from "../src/core/pack.js";
+import { packDirectory, parseNpmPackResult } from "../src/core/pack.js";
 import { materializeReproduction } from "../src/core/reproduction.js";
 import { inspectTarball } from "../src/core/tarball.js";
 import { createTemporaryDirectory } from "../src/core/temporary.js";
@@ -630,6 +630,21 @@ describe("inspectTarball", () => {
 });
 
 describe("packDirectory", () => {
+  it.each([
+    ["legacy array", (result: unknown) => [result]],
+    ["npm 12 object", (result: unknown) => ({ "package-contract": result })],
+  ])("parses the %s npm output shape", (_label, wrap) => {
+    const result = {
+      filename: "package-contract-1.0.0.tgz",
+      files: [],
+      integrity: "sha512-example",
+      name: "package-contract",
+      version: "1.0.0",
+    };
+
+    expect(parseNpmPackResult(JSON.stringify(wrap(result)))).toEqual(result);
+  });
+
   it("surfaces npm pack failures and cleans its temporary destination", async () => {
     const directory = await mkdtemp(
       join(tmpdir(), "package-contract-invalid-pack-test-"),
