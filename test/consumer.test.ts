@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { runtimeProbeSource } from "../src/core/consumer.js";
 import { defineConsumer } from "../src/index.js";
 
 describe("defineConsumer", () => {
@@ -76,5 +77,20 @@ describe("defineConsumer", () => {
         typescriptResolution: "bundler",
       }),
     ).toThrow(TypeError);
+  });
+});
+
+describe("runtimeProbeSource", () => {
+  it("retries ESM JSON entrypoints with an import attribute", () => {
+    const source = runtimeProbeSource("example", "esm", "./package.json");
+
+    expect(source).toContain('error.code === "ERR_IMPORT_ATTRIBUTE_MISSING"');
+    expect(source).toContain('{ with: { type: "json" } }');
+  });
+
+  it("uses native require semantics for CommonJS JSON entrypoints", () => {
+    expect(runtimeProbeSource("example", "cjs", "./package.json")).toContain(
+      'const subject = require("example/package.json");',
+    );
   });
 });

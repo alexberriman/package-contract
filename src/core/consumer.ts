@@ -63,7 +63,13 @@ export function runtimeProbeSource(
     return `if (!(typeof subject[${name}] === "string" || subject[${name}] instanceof URL)) throw new Error(${JSON.stringify(`Expected export ${action.exportName} to be a file path or URL.`)});\nawait (await import("node:fs/promises")).readFile(subject[${name}]);`;
   });
   const load = esm
-    ? `const subject = await import(${JSON.stringify(specifier)});`
+    ? `let subject;
+try {
+  subject = await import(${JSON.stringify(specifier)});
+} catch (error) {
+  if (!(error && typeof error === "object" && "code" in error && error.code === "ERR_IMPORT_ATTRIBUTE_MISSING")) throw error;
+  subject = await import(${JSON.stringify(specifier)}, { with: { type: "json" } });
+}`
     : `const subject = require(${JSON.stringify(specifier)});`;
   const body = [load, ...statements].join("\n");
   return esm
