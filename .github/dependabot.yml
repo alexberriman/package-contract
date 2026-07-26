@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 5
+    groups:
+      development-tooling:
+        dependency-type: development
+      incumbent-analyzers:
+        patterns:
+          - "@arethetypeswrong/*"
+          - "@publint/*"
+          - publint
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 3

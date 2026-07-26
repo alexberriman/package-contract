@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused consumer contract or workflow improvement.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Consumer problem
+      description: Describe the published-package failure or workflow gap this would address.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Provide a public package, fixture, or real consumer scenario when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the smallest interface or probe behavior that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Existing tools and alternatives
+      description: Explain whether Publint, Are the Types Wrong, or another tool already covers the case.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This proposal concerns the packed artifact as consumed by users.
+          required: true
+        - label: This proposal preserves three-state results and avoids speculative compatibility claims.
+          required: true

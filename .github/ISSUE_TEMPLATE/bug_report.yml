@@ -1,0 +1,64 @@
+name: Bug report
+description: Report incorrect behavior or a false positive.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve package-contract. Please remove credentials and private package contents before sharing output.
+  - type: input
+    id: version
+    attributes:
+      label: package-contract version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js and npm versions
+      placeholder: Node.js 24.16.0, npm 12.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: input
+    attributes:
+      label: Package input
+      options:
+        - Local directory
+        - Local tarball
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Link a public repository or provide the smallest safe package fixture and command that demonstrates the issue.
+      placeholder: |
+        package-contract check ./example.tgz --json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include redacted output and the diagnostic code when available.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed credentials, private registry URLs, and proprietary package contents.
+          required: true
+        - label: I checked for an existing issue covering this behavior.
+          required: true
