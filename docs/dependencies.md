@@ -39,6 +39,8 @@ local tarball.
 - Biome provides formatting and linting.
 - Vitest and its V8 coverage provider run the test suite and enforce coverage
   gates.
+- Knip rejects unused files, dependencies, and exports while accounting for
+  deliberate worker and research entrypoints.
 - `@types/node` supplies Node.js declarations during development.
 
 All dependency versions are exact in `package.json` and locked by

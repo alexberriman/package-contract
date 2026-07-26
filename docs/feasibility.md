@@ -1,4 +1,4 @@
-# M0 feasibility report
+# Feasibility report
 
 Decision: **GO**, with exactly six behaviorally distinct residual failures out of
 the ten scenarios.

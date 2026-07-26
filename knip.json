@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "research/m0/run.mjs",
+    "scripts/*.mjs",
+    "src/cli.ts",
+    "src/index.ts",
+    "src/probes/typescript-worker.ts"
+  ],
+  "ignoreDependencies": ["@arethetypeswrong/cli", "typescript-5-6", "typescript-6"],
+  "project": ["research/**/*.mjs", "scripts/**/*.mjs", "src/**/*.ts", "test/**/*.ts"]
+}

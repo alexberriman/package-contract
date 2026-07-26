@@ -39,9 +39,11 @@ public API boundary.
 ## TypeScript adapters
 
 The compiler is resolved from the invoking project, or from an explicit local
-override. TypeScript 5.6 and 6 use the classic compiler API. TypeScript 7 uses
-`typescript/unstable/sync`. The unstable API is isolated in a child worker so
-crashes, output, and execution time remain bounded.
+override. TypeScript 5.6 through 6.x use the classic compiler API. Validated
+TypeScript 7.0.x releases starting at 7.0.2 use
+`typescript/unstable/sync`. Later 7.x minors remain outside the peer range until
+their unstable API is verified. The native API is isolated in a child worker
+so crashes, output, and execution time remain bounded.
 
 All subpaths for one profile are batched into one worker invocation. Each
 subpath still receives an independent generated project and structured result.

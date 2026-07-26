@@ -60,8 +60,9 @@
   "scripts": {
     "audit:licenses": "node scripts/audit-licenses.mjs",
     "build": "node node_modules/typescript/bin/tsc -p tsconfig.build.json",
-    "check": "npm run format:check && npm run typecheck && npm run test",
+    "check": "npm run format:check && npm run typecheck && npm run deadcode && npm run test",
     "clean": "node --input-type=module -e \"import { rm } from 'node:fs/promises'; await Promise.all(['coverage', 'dist'].map(path => rm(path, { recursive: true, force: true })))\"",
+    "deadcode": "knip --no-progress",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "prepack": "npm run clean && npm run build",
@@ -77,7 +78,7 @@
     "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "typescript": ">=5.6 <8"
+    "typescript": ">=5.6 <7 || >=7.0.2 <7.1"
   },
   "peerDependenciesMeta": {
     "typescript": {
@@ -89,6 +90,7 @@
     "@biomejs/biome": "2.5.5",
     "@types/node": "26.1.1",
     "@vitest/coverage-v8": "4.1.10",
+    "knip": "6.29.0",
     "typescript": "7.0.2",
     "typescript-5-6": "npm:typescript@5.6.3",
     "typescript-6": "npm:typescript@6.0.3",

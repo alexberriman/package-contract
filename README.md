@@ -10,7 +10,7 @@ repository.
 
 [![CI](https://github.com/alexberriman/package-contract/actions/workflows/ci.yml/badge.svg)](https://github.com/alexberriman/package-contract/actions/workflows/ci.yml)
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript 5.6–7](https://img.shields.io/badge/TypeScript-5.6%E2%80%937-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript 5.6–6 and 7.0](https://img.shields.io/badge/TypeScript-5.6%E2%80%936%20%7C%207.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 </div>
@@ -97,8 +97,8 @@ JavaScript files in the packed artifact. Ambiguous patterns are
 `not-evaluated`.
 
 TypeScript is a peer dependency. The runner resolves the invoking project's
-compiler and supports TypeScript 5.6, 6, and 7 through version-specific
-structured adapters.
+compiler and supports TypeScript 5.6 through 6.x plus the validated 7.0.x
+native API, starting at 7.0.2.
 
 ## CLI
 
@@ -118,7 +118,7 @@ package-contract check . --reporter github
 # Show failures already explained by Publint or ATTW
 package-contract check . --include-explained
 
-# Prove installation can replay without network access
+# Refuse network access; an empty isolated cache can make checks incomplete
 package-contract check . --offline
 
 # Compare two artifacts under the same profiles and captured npm cache
@@ -128,9 +128,10 @@ package-contract compare ./before.tgz ./after.tgz
 package-contract check . --repro <diagnostic-id>
 ```
 
-Exit code 0 means no visible residual error. Exit code 1 means at least one
-residual error reproduced. Exit code 2 means the invocation or check could not
-complete, including an inconclusive comparison caused by dependency drift.
+Exit code 0 means no visible residual error and no unexpected incomplete
+evaluation. Exit code 1 means at least one residual error reproduced. Exit code
+2 means the invocation or check could not complete, including an offline cache
+miss or an inconclusive comparison.
 
 See the full [CLI reference](./docs/cli.md).
 
@@ -172,7 +173,10 @@ The public surface is deliberately small:
 - `testPackage(input, options)` returns a deterministic package report.
 - `comparePackages(before, after, options)` classifies regressions, fixes, and
   unchanged diagnostics.
-- Reporter helpers serialize JSON, human output, and GitHub annotations.
+
+Those are the only exported runtime functions. Report, profile, diagnostic, and
+action types are exported for TypeScript consumers. See the complete
+[library API reference](./docs/api.md).
 
 ## Test behavior that imports cannot reach
 
@@ -285,7 +289,7 @@ Do not run it on code you would not otherwise build and test. Read the complete
 
 - Node.js 24 or newer
 - npm synthetic consumers
-- TypeScript 5.6 through 7
+- TypeScript 5.6 through 6.x, plus 7.0.2 through 7.0.x
 - ESM package distribution
 - Local package directories and `.tgz` files only
 
@@ -298,7 +302,7 @@ are outside v1. Bundler in the matrix refers to TypeScript's
 The project began with ten deliberately broken packages. Six failures were
 empirically invisible to Publint 0.3.22 and Are the Types Wrong 0.18.5, which
 met the product's feasibility gate. The
-[feasibility report](./research/m0/README.md) records the exact classifications.
+[feasibility report](./docs/feasibility.md) records the exact classifications.
 
 The clean-package validation currently includes full discovered matrices for
 Nanoid, p-limit, Picocolors, SemVer, and Zod with zero residual findings. See
