@@ -94,7 +94,7 @@
     "typescript": "7.0.2",
     "typescript-5-6": "npm:typescript@5.6.3",
     "typescript-6": "npm:typescript@6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "dependencies": {
     "@arethetypeswrong/core": "0.18.5",
